@@ -90,7 +90,7 @@ class MockUnderstanding:
             return result("ingredient_advice", "这是一份演示食材建议；您可以补充食材与做法，不会自动生成打卡。")
         if fixture in {"medication_confirm", "medication_ambiguous"} or (fixture is None and text in {"吃了药", "我吃药了"}):
             tasks = [t for t in snapshot.tasks if t.category == "medication"
-                     and t.completion == "pending" and t.date == local_date(snapshot.now)
+                     and not t.cancelled and t.completion == "pending" and t.date == local_date(snapshot.now)
                      and t.plan_id and t.due_at is not None and t.due_at <= snapshot.now
                      and not t.waiting_for_meal]
             if fixture == "medication_ambiguous" or len(tasks) != 1:

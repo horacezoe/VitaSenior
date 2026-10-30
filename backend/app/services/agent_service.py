@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.bundle import ServiceBundle
 from app.contracts.context import Actor
-from app.core.clock import Clock
+from app.core.clock import Clock, local_date
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.models.agent import AgentAction as ActionRow, AgentTurn as TurnRow
@@ -113,6 +113,13 @@ class AgentService:
         if memory.version != snapshot.memory.version:
             raise AppError(409, "VERSION_CONFLICT", "Memory changed while provider was running",
                            {"current_version": memory.version})
+        for prepared in plan.actions:
+            if prepared.action.type != 'record_medication':
+                continue
+            expected = prepared.payload.get('task_plan_version')
+            current = self.services.medication.get_plan(tx, actor, prepared.payload['checkin']['payload']['plan_id'])
+            if current.elder_id != request.elder_id or (expected is not None and current.version != expected):
+                raise AppError(409, 'VERSION_CONFLICT', 'Medication plan changed while provider was running')
         row = TurnRow(elder_id=request.elder_id, actor_user_id=actor.user_id,
                       conversation_id=request.conversation_id or new_id("conversation"),
                       client_turn_id=request.client_turn_id, request_json=request.model_dump(mode="json"),
@@ -270,6 +277,16 @@ class AgentService:
             if body.type == "diet":
                 for asset_id in body.payload.image_asset_ids:
                     self.services.media.get_asset(tx, actor, asset_id)
+            if body.type == "medication":
+                tasks = self.services.tasks.today(tx, actor, row.elder_id, local_date(body.occurred_at)).items
+                target = next((t for t in tasks if t.task_id == body.task_id), None)
+                if (target is None or target.cancelled or target.plan_id != body.payload.plan_id
+                        or target.completion != 'pending'
+                        or (payload.get('task_plan_version') is not None and target.plan_version != payload['task_plan_version'])):
+                    raise AppError(409, 'VERSION_CONFLICT', 'Medication task changed; please verify the plan again')
+                plan = self.services.medication.get_plan(tx, actor, body.payload.plan_id)
+                if plan.elder_id != row.elder_id or plan.version != target.plan_version:
+                    raise AppError(409, 'VERSION_CONFLICT', 'Medication plan changed after preparation')
             output = self.services.checkins.create_or_update(tx, actor, row.elder_id, body)
         elif row.type == "update_profile":
             body = ProfileUpdate.model_validate(payload['update'])

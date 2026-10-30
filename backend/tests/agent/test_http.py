@@ -1,8 +1,6 @@
 """Real A + C HTTP tests; B dependencies are never silently replaced."""
 from dataclasses import replace
 from datetime import datetime, timezone
-from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +11,6 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.uow import UnitOfWork
 from app.main import create_app
-from app.composition import compose
 from app.models.agent import AgentTurn, AgentAction, MemoryDocument
 from app.models.identity import ElderProfile, MediaAsset, BindingCode, IdempotencyRecord
 from app.models.identity import ChangeProposal as ProposalRow
@@ -21,10 +18,7 @@ from app.models.health import Notification as NoticeRow
 from app.contracts.context import Actor
 from app.schemas.enums import Role
 from app.providers.mock_audio import FIXTURES
-from app.providers.mock_audio import MockASR, MockTTS
-from app.providers.mock_chat import MockUnderstanding
 from app.services.agent_service import AgentService
-from app.services.memory_service import MemoryService
 from app.seed import framework_seed
 
 
@@ -32,21 +26,12 @@ from app.seed import framework_seed
 def api(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, tzinfo=timezone.utc))
     settings=Settings(data_dir=tmp_path/'api', database_url=None, scanner_enabled=False)
-    services=compose(clock,settings)
-    memory=MemoryService(clock,services.access)
-    services=replace(services,memory=memory)
-    # Real B services, with the same C memory/Clock that production A will wire.
-    services.checkins.memory=memory
-    services.medication.memory=memory
-    services.reports.memory=memory
-    services.changes.bind(medication=services.medication,notifications=services.notifications,memory=memory)
-    app = create_app(settings, clock=clock, services=services)
-    # Explicit integration-test injection until A applies the shared wiring.
-    # Normal runtime is guarded 501; no test substitute is installed in product.
-    app.state.agent=AgentService(clock,services,memory)
-    app.state.agent_chat=MockUnderstanding()
-    app.state.agent_asr=MockASR()
-    app.state.agent_tts=MockTTS()
+    # Exercise A's actual production assembly, not a test-only replacement bundle.
+    app = create_app(settings, clock=clock)
+    assert app.state.agent.services is app.state.services
+    assert app.state.agent.memory is app.state.services.memory
+    assert app.state.services.memory.clock is clock
+    assert app.state.services.checkins.memory is app.state.services.memory
     with TestClient(app, raise_server_exceptions=False) as client:
         seed = framework_seed(app.state.sessions, clock)
         headers = {}
@@ -369,3 +354,56 @@ def test_actual_b_confirmation_writes_once_and_report_uses_same_record(api):
     # Current frozen B port defaults to user; C must not directly rewrite B's
     # table to pretend the missing agent_confirmed source argument is wired.
     assert confirmed.json()['data']['result']['source']=='user'
+
+
+@pytest.mark.parametrize('plan_change',['none','during_provider','before_confirm'])
+def test_medication_new_day_task_ids_remain_valid_after_planning(api,plan_change):
+    from app.schemas.health import MedicationPlanWrite, PlanPatch
+    from app.models.health import Checkin, DailyTask
+    app,client,clock,seed,_=api
+    actor=Actor(seed['elder']['user_id'],Role.elder)
+    # Tomorrow has no targets yet. A plan made today is not a backdated duty.
+    with UnitOfWork(app.state.sessions) as unit:
+        plan=app.state.services.medication.apply_change(unit.session,actor,seed['elder']['elder_id'],
+            'create',None,MedicationPlanWrite(name='既定演示药',dose_display='用户既定用量',
+                schedule={'mode':'fixed','slots':[{'slot_id':'morning','local_time':'08:00'}]},
+                start_date='2026-10-31'),None)
+        unit.commit()
+    clock.advance(seconds=24*3600)
+    def change_plan():
+        with UnitOfWork(app.state.sessions) as unit:
+            app.state.services.medication.apply_change(unit.session,actor,seed['elder']['elder_id'],
+                'update',plan.plan_id,PlanPatch(notes='用户更新后的既定计划备注'),plan.version)
+            unit.commit()
+    if plan_change=='during_provider':
+        original=app.state.agent_chat
+        class ChangesDuringProvider:
+            def plan(self,request,snapshot):
+                change_plan()
+                return original.plan(request,snapshot)
+        app.state.agent_chat=ChangesDuringProvider()
+    prepared=turn(api,'medication_confirm',text='我吃了既定计划的药')
+    if plan_change=='during_provider':
+        assert prepared.status_code==409,prepared.text
+        assert count(api,Checkin)==count(api,AgentTurn)==count(api,AgentAction)==0
+        return
+    assert prepared.status_code==201,prepared.text
+    action=prepared.json()['data']['actions'][0]
+    assert action['type']=='record_medication'
+    task_id=action['preview']['task_id']
+    with app.state.sessions() as tx:
+        assert tx.get(DailyTask,task_id) is not None,'Planning returned a rolled-back task ID'
+    assert count(api,Checkin)==0
+    if plan_change=='before_confirm':change_plan()
+    decision=client.post(f"/api/v1/agent/actions/{action['action_id']}/decision",
+                         json={'decision':'confirm'},headers=hdr(api,'med-confirm'))
+    if plan_change=='before_confirm':
+        assert decision.status_code==409,decision.text
+        assert count(api,Checkin)==0
+        with app.state.sessions() as tx:
+            assert tx.get(AgentAction,action['action_id']).status=='pending'
+        return
+    assert decision.status_code==200,decision.text
+    assert decision.json()['data']['result']['task_id']==task_id
+    assert decision.json()['data']['result']['payload']['plan_id']==plan.plan_id
+    assert count(api,Checkin)==1

@@ -103,12 +103,16 @@ def _proposal_id(services, tx, actor, elder_id, notification_id):
     raise AppError(422, 'VALIDATION_ERROR', 'Too many proposals to resolve this notification')
 
 
-def _snapshot(auth, tx, body):
+def _needs_tasks(body):
+    return body.mock_fixture_id == 'medication_confirm' or (
+        body.mock_fixture_id is None and (body.text or '').strip() in {'吃了药', '我吃药了'})
+
+
+def _snapshot(auth, tx, body, *, include_tasks=True):
     state = auth.request.app.state
     profile = state.services.profile.read(tx, auth.actor, body.elder_id)
     tasks, slots = [], {}
-    if body.mock_fixture_id == 'medication_confirm' or (
-            body.mock_fixture_id is None and (body.text or '').strip() in {'吃了药', '我吃药了'}):
+    if include_tasks and _needs_tasks(body):
         tasks = state.services.tasks.today(tx, auth.actor, body.elder_id, local_date(state.clock.now())).items
         for task in tasks:
             if task.category != 'medication' or not task.plan_id:
@@ -129,13 +133,20 @@ def _snapshot(auth, tx, body):
 def turn(auth, body, key):
     state = auth.request.app.state
     content = None
-    with read_unit(auth.request) as unit:
+    audio_only = bool(body.audio_asset_id and not body.text)
+    materializing = _needs_tasks(body) and not audio_only
+    # TaskPort.today may create today's goals. Persist those stable IDs in a
+    # separate SHORT transaction; never retain its write lock for a provider.
+    # Targets are not intake facts: no Checkin is written before confirmation.
+    with (write_unit(auth.request) if materializing else read_unit(auth.request)) as unit:
         _context_access(auth, unit.session, body)
         _ready(state)
         previous = state.agent.replay(unit.session, auth.actor, body)
-        snapshot = None if previous else _snapshot(auth, unit.session, body)
+        snapshot = None if previous else _snapshot(auth, unit.session, body, include_tasks=not audio_only)
         if previous is None and body.audio_asset_id and not body.text:
             content = state.services.media.open_content(unit.session, auth.actor, body.audio_asset_id)
+        if materializing:
+            unit.commit()
     plan, speech = None, None
     if previous is None:
         planning_input, asr_provider = body, 'not_used'
@@ -143,9 +154,12 @@ def turn(auth, body, key):
             recognized = state.agent_asr.transcribe(_content_bytes(content), content.mime_type, body.mock_fixture_id)
             planning_input = body.model_copy(update={'text': recognized.transcript})
             asr_provider = 'mock'
-            with read_unit(auth.request) as unit:
+            materializing = _needs_tasks(planning_input)
+            with (write_unit(auth.request) if materializing else read_unit(auth.request)) as unit:
                 _context_access(auth, unit.session, body)
                 snapshot = _snapshot(auth, unit.session, planning_input)
+                if materializing:
+                    unit.commit()
         try:
             plan = state.agent_chat.plan(planning_input, snapshot)
             plan = replace(plan, request_hash=request_digest(body), transcript=planning_input.text or '', asr_provider=asr_provider)
