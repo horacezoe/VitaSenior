@@ -4,7 +4,11 @@
 
 此前 ports、clock/composition、Task/History绑定、C2启用、cancelled_at/DailyGoalBatch、录音所有权均已落地。B已完成剩余路由与模型适配，实际默认组装验收后开启16项health能力；A此前指出的7项全部开启。旧申请作为追溯保留，不再以那些已解决事项阻塞。
 
+B最新代码 `be0ae4c` 已合入A `51dc555` 与C `1e31bb6`；最终全量 **266 passed / 42 deselected / 1 xfailed**，真实默认Uvicorn网络冒烟通过。1项strict xfail就是下面第2项，不算通过。NOTI03因第1项保持false；其他16项health已启用。
+
 1. **A：提案提示音不能触发自动生效窗口。** `app/fixtures/announcement.py` 的0.8秒双音不包含修改内容；`CHANGE01` 当前把它登记成通知音频。B不能把播放提示音当作“完整播报提案”。因此暂不登记NOTI03（其service/普通回执已实测），避免通过该入口启动窗口。请A/C准备与本次提案内容一致的真实中文语音，并冻结可信的内容/播放完成校验约定；未能播报时保留pending_notice及明确接受/拒绝。B不在写事务调用TTS，也不伪造完成。
+
+   最新又合入A `6774083` 的接口7.1补充，但文档把提示音表述为可完成完整播报，没有改变它仅为双音的代码事实。该文档描述需一并修正。C `1e31bb6` 已提供特定例子的真实语音素材，可供A匹配相应提案使用；它不能作为任意新提案均已播报的证据。
 2. **A：设置提案绕过B入口，未来目标未更新。** 真实HTTP回归见 `backend/tests/health/test_shared_settings_gap.py`，明确strict xfail，不算通过：先生成明日运动目标(expected=1) → 子女提案关闭运动 → 老人明确accept返回applied、settings.enabled=false → 明日报表expected仍为1。`ChangeService._apply` settings分支当前直接写JSON；请在同tx调用已冻结 `medication.update_settings(tx, actor, elder_id, base_version, SettingsPatch(...))`，让版本/来源失效/未来任务停用一起完成。不要重复bump版本或复制B的目标逻辑。修复后strict xfail会XPASS失败，由B移除标记并复验。
 3. **A：超时应用仍构造老人Actor。** `_principal_for_timeout` 只是对原 `_system_actor` 改名，仍未给B/C提供明确系统授权入口。请统一冻结系统变更/来源失效的授权方式，B继续只调用ChangePort.apply_due(tx,now)。
 4. **A：联调脚本药物时刻/选择条件。** 当前 `integration_smoke.round_two` 在12:00HK创建当天08:00新计划；B按“新计划不补造过去义务”不生成这个过期任务，故REC02显示PENDING。请改成未来时刻/餐后任务，并按新建plan_id选择对应task，避免选到其他计划同名slot；NOTI03前还需发送NOTI01 visible心跳。B的默认组装回归已验证未来13:00任务→明确taken→唯一记录→日报completed=1。
