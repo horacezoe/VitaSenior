@@ -4,7 +4,7 @@
 
 ## 安装
 
-已实际验证 Windows / Python 3.13.9。项目声明支持 3.11–3.13；其他 Python/操作系统尚未实测。`requirements.lock` 固定完整运行及测试依赖，`pyproject.toml` 固定直接依赖。Git 标签 `framework-v1` 为唯一分工基线。
+F0已验证 Windows / Python 3.13.9，F1另在Windows / Python 3.11.5复验通过。项目声明支持3.11–3.13，其他版本/系统尚未实测。`requirements.lock`固定完整运行及测试依赖。原框架标签为`framework-v1`；本轮业务从`f1-reviewed-v1`共同开始，按[本轮验收说明](../docs/协作/F1验收与开工说明.md)和正式任务单执行。A0完成后合入`f1-shared-v1`。
 
 ```powershell
 cd D:\codes\VitaSenior\backend
