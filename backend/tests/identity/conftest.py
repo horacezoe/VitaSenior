@@ -113,7 +113,7 @@ class FakeNotifications:
         tx.add(row)
         tx.flush()
         self.enqueued.append(row)
-        return SimpleNamespace(id=row.id)
+        return SimpleNamespace(notification_id=row.id)
 
     def mark_proposal_handled(self, tx, notification_id):
         row = tx.get(NotificationRow, notification_id)

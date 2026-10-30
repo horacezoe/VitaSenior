@@ -1,8 +1,12 @@
 """Single assembly point. Business code never imports concrete services.
 
-A0 additions: one shared clock/settings instance is handed to every service that
-needs time; capability declarations are aggregated here and only read by
-routers/system.py; new ports are wired as explicit 501 stubs.
+One shared clock/settings instance is handed to every service, and every cross
+domain port is injected here. B's frozen flows additionally refuse to run when a
+service does not hold the *application* clock (see health_flows.perform), so this
+function is the single switch that makes the wired endpoints live.
+
+A<->B notification/change reference cycle is broken by late binding: build the
+change service, give it the notification port, then hand the change port back.
 """
 from collections.abc import Iterable
 
@@ -32,24 +36,28 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
     """Build the bundle. clock/settings default only for isolated unit tests; the
     application always passes its own (app.state.clock / app.state.settings)."""
     clock, settings = clock or SystemClock(), settings or Settings()
-    # A<->B notification/change reference cycle is broken by late binding below;
-    # only this function wires services, business code never looks them up.
+    access = AccessService()
+    media = MediaService(clock, settings)
+    # C's MemoryService takes (clock, access) once backend/agent is merged; today's
+    # stub takes no arguments, so the constructor call is the one edit to make then.
     memory = MemoryService()
-    medication = MedicationService()
+    medication = MedicationService(clock, access=access, media=media, memory=memory)
+    checkins = CheckinService(clock, access=access, memory=memory, media=media)
+    reports = ReportService(clock, access=access, memory=memory)
     changes = ChangeService(clock, settings)
-    notifications = NotificationService(clock, changes=changes)
+    notifications = NotificationService(clock, access=access, media=media, changes=changes)
     changes.bind(medication=medication, notifications=notifications, memory=memory)
     return ServiceBundle(
-        access=AccessService(),
+        access=access,
         binding=BindingService(clock, limiter),
         profile=ProfileService(clock, settings),
         changes=changes,
         medication=medication,
-        checkins=CheckinService(),
+        checkins=checkins,
         notifications=notifications,
-        reports=ReportService(),
+        reports=reports,
         memory=memory,
-        media=MediaService(clock, settings),
+        media=media,
         tasks=TaskService(),
         history=HistoryService(),
     )

@@ -72,7 +72,8 @@ class ChangeService:
             title=TITLES[(body.target_type, body.operation)], text=NOTICE_TEXT,
             repeat_count=1, due_at=now, proposal_id=row.id,
         ))
-        row.notification_id = notification.id
+        # The port returns the Notification DTO (notification_id), not an ORM row.
+        row.notification_id = notification.notification_id
         tx.flush()
         return self.view(row)
 

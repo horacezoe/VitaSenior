@@ -253,7 +253,41 @@ B/C 的端口缺口：ONB02（B 计划导入 + 历史）、AGENT01（C 的 HTTP 
 CHANGE01（B 的计划、任务、打卡、通知入队）、REC01/REPORT01/MEM01（B 的查询与 C 的记忆路由）。
 两条隔离断言已经 OK：另一个 DEMO01 家庭的子女读他人档案/看板均 403。
 
-### 11.2 C 分支（`backend/agent`，7d8bfea）的合并结论
+### 11.2 B 已合并：生产 composition 接线（`integration/f1`）
+
+B 的 `backend/health` = `b1535f8` 已经把我的 A0/A1/A2 全部合入（`72d7610` 是它的祖先），
+并在其上完成 B1/B2 服务与 PLAN02/PLAN03/TASK01/REC02/REC03/REPORT01/NOTI03 的 HTTP flow。
+因此我把 `integration/f1` 从 `backend/platform` 快进到该提交，只补集成人这半边：
+
+- **生产 composition 接线**：`compose()` 现在构造 `access`/`media`/`memory` 一次，并把同一个
+  clock（以及 access/media/memory/changes）注入 `MedicationService`/`CheckinService`/
+  `NotificationService`/`ReportService`。这是 B 的 `health_flows.perform` 两道闸门之一：
+  `getattr(service,'clock') is not app.state.clock` 就必须 501。
+- **修一个集成才暴露的真 bug**：`ChangeService.create` 之前写 `notification.id`，而
+  `NotificationPort.enqueue` 的契约返回 `Notification` DTO（`notification_id`）。现在已改，
+  测试替身也改成返回同样的形状。
+- **CHANGE01 已登记为 true**（B 的 `enqueue` 就绪后实测 201）；CHANGE04 仍为 false，
+  因为 accept 走完整应用路径还要 C 的 `MemoryPort.on_source_changed`。
+- 框架用例 `CHANGE04` 的代表请求从 `reject` 改为 `accept`：reject 只关通知，accept 才覆盖
+  "写目标 + 失效来源"的完整契约，用它做能力闸门更严格。
+
+临时打开 B 已接线的开关（仅实测用，未提交）后的联调结果：
+**22 ok / 7 pending / 0 failed**，`PLAN02`、`CHANGE01`、`REPORT01` 由 PENDING 转 OK。
+其余 pending 的真实原因：
+
+| 仍 501 | 原因 |
+| --- | --- |
+| ONB02 | `HistoryService.import_demo_history` 仍是 A0 桩（B 只要实现它即可） |
+| TASK01 | `TaskService.today` 仍是 A0 桩 |
+| REC02 | 依赖 TASK01 产出 task_id |
+| REC01 / DASH01 / CAL01 / SET01–02 / PLAN01 / NOTI01–02 / NOTI04 | B 尚未接 flow |
+| AGENT01 / MEM01 | C 未合并（`backend/agent` 仍停在 `7d8bfea`） |
+
+`backend/health` 上此时有 **158 passed, 42 deselected**（含上面的修复）、契约 hash 未变、
+`Architecture OK`。
+
+
+### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
 - C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/
   composition/seed/OpenAPI/框架测试），合并面干净。
