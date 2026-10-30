@@ -137,7 +137,7 @@ class NotificationService:
             if not asset.mime_type.startswith("audio/") or asset.size_bytes == 0:
                 invalid("Reminder audio must be a nonempty audio asset")
         if payload.proposal_id:
-            if self.changes is None:
+            if self.changes is None or self.media is None:
                 unimplemented()
             proposal = self.changes.read(tx, actor, payload.proposal_id)
             if proposal.elder_id != payload.elder_id:
@@ -200,6 +200,10 @@ class NotificationService:
                         if self.changes is None:
                             unimplemented()
                         proposal = self.changes.mark_played(tx, actor, row.proposal_id, now)
+                elif row.delivery_state == "played" and row.proposal_id:
+                    if self.changes is None:
+                        unimplemented()
+                    proposal = self.changes.read(tx, actor, row.proposal_id)
         else:
             if row.proposal_id:
                 transition_error("Use the proposal accept/reject decision")

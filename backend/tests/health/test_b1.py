@@ -291,3 +291,34 @@ def test_hk_day_and_future_record_rejection(health):
     future = meal(h).model_copy(update={"occurred_at": h.clock.now() + timedelta(seconds=1)})
     with pytest.raises(AppError):
         transact(h, h.checkins.create_or_update, future)
+
+
+def test_new_after_meal_plan_cannot_backdate_past_obligation(health):
+    h = health
+    transact(h, h.checkins.create_or_update, meal(h))
+    h.clock.advance(seconds=3600)
+    plan(h, "after_meal")
+    assert not any(t.category == "medication" for t in transact(h, h.checkins.tasks, DAY).items)
+
+
+def test_schedule_change_cannot_backdate_existing_future_task(health):
+    h = health
+    p = plan(h)
+    before = med_task(h)
+    h.clock.advance(seconds=1800)
+    transact(h, h.medication.apply_change, "update", p.plan_id,
+        PlanPatch(schedule={"mode": "fixed", "slots": [{"slot_id": "one", "local_time": "08:00"}]}), 1)
+    after = med_task(h)
+    assert after.due_at == before.due_at and after.plan_version == 1
+
+
+def test_future_settings_retirement_is_explicit_and_atomic(health):
+    h = health
+    transact(h, h.checkins.tasks, DAY + timedelta(days=1))
+    with pytest.raises(AppError) as exc:
+        transact(h, h.medication.update_settings, 1,
+            SettingsPatch(exercise={"enabled": False, "local_time": "17:00"}))
+    assert exc.value.status == 501
+    with h.factory() as tx:
+        assert tx.get(ElderProfile, h.elder).version == 1
+        assert tx.get(MemoryDocument, h.elder) is None

@@ -15,7 +15,7 @@ from app.core.auth import require_elder_access
 from app.core.clock import Clock, HK, UTC, SystemClock, local_date
 from app.core.errors import AppError, unimplemented
 from app.models.health import Checkin as CheckinRow, DailyTask as TaskRow, MedicationPlan as PlanRow, Notification
-from app.models.identity import ElderProfile
+from app.models.identity import ElderProfile, User
 from app.schemas.common import Page, SourceRef
 from app.schemas.health import (
     CancelledCheckin, Checkin, CheckinUpdate, CheckinWrite, DailyTask,
@@ -95,6 +95,7 @@ def materialize_tasks(tx, elder_id, day, now):
     if day < local_date(now):
         return list(existing.values())
     settings = settings_for(tx, elder_id)
+    meals = {r.slot_key: r for r in live_records(tx, elder_id, day) if r.type == "diet"}
 
     def add(category, slot_key, title, due_at=None, **kwargs):
         if (category, slot_key) not in existing:
@@ -118,7 +119,9 @@ def materialize_tasks(tx, elder_id, day, now):
             "end_date": plan.end_date.isoformat() if plan.end_date else None}
         for slot in plan.schedule["slots"]:
             due = at_local(day, slot["local_time"]) if plan.schedule["mode"] == "fixed" else None
-            if due and due < plan.updated_at:
+            meal = meals.get(slot.get("meal_slot"))
+            effective_due = due or (meal.occurred_at + timedelta(minutes=slot["delay_minutes"]) if meal else None)
+            if effective_due and effective_due < plan.updated_at:
                 continue  # a new plan cannot introduce already-past obligations
             add("medication", f'{plan.id}:{slot["slot_id"]}', plan.name, due,
                 plan_id=plan.id, plan_version=plan.version, plan_snapshot=snapshot,
@@ -168,6 +171,83 @@ class CheckinService:
     def today(self, tx: Session, actor: Actor, elder_id: str, day: date) -> TaskList:
         """A0 TaskPort entry; composition can share this health-domain instance."""
         return self.tasks(tx, actor, elder_id, day)
+
+    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int) -> None:
+        """A0 HistoryPort, housed in the approved B file; composition may share
+        this instance as history/checkins/tasks. Explicit demo fixtures only.
+        """
+        from app.fixtures.history import HISTORY_DAYS, history_template
+        authorize(tx, actor, elder_id, "self", self.access)
+        owner = tx.get(User, actor.user_id)
+        elder = tx.get(ElderProfile, elder_id)
+        if owner.demo_id != demo_id or elder.onboarding_status != "confirmed":
+            invalid("History import requires this confirmed demo household")
+        if not 1 <= days <= HISTORY_DAYS:
+            invalid("Unsupported history length")
+        marker = f"demo:{demo_id}:{elder_id}:history"
+        if tx.scalar(select(TaskRow.id).where(TaskRow.source_key == marker)):
+            return
+        plans = list(tx.scalars(select(PlanRow).where(PlanRow.elder_id == elder_id).order_by(PlanRow.id)))
+        now = self.clock.now()
+        marker_saved = False
+        for template in history_template()[-days:]:
+            day = local_date(now) + timedelta(days=template["day_offset"])
+            saved = {(r.category, r.slot_key): r for r in task_rows(tx, elder_id, day)}
+            def add_task(category, key, title, due_at, **kwargs):
+                nonlocal marker_saved
+                task = saved.get((category, key))
+                if task is None:
+                    source = marker if not marker_saved else f"{marker}:{day}:{category}:{key}"
+                    task = TaskRow(elder_id=elder_id, local_date=day, category=category,
+                        slot_key=key, title=title, due_at=due_at, source_key=source, **kwargs)
+                    tx.add(task)
+                    tx.flush()
+                    saved[category, key] = task
+                    marker_saved = True
+                return task
+            for slot, hhmm in [("breakfast", "08:30"), ("lunch", "12:30"), ("dinner", "18:30")]:
+                add_task("diet", slot, f"演示历史餐食 {slot}", at_local(day, hhmm))
+            add_task("exercise", "daily", "演示历史运动", at_local(day, "17:00"))
+
+            def add_record(category, payload, task, occurred_at, suffix):
+                source = f"{marker}:{day}:record:{category}:{suffix}"
+                if tx.scalar(select(CheckinRow.id).where(CheckinRow.source_key == source)):
+                    return
+                if category in {"diet", "medication"}:
+                    condition = (CheckinRow.slot_key == payload["meal_slot"]) if category == "diet" else (CheckinRow.task_id == task.id)
+                    if tx.scalar(select(CheckinRow.id).where(CheckinRow.elder_id == elder_id,
+                            CheckinRow.type == category, CheckinRow.local_date == day,
+                            CheckinRow.cancelled_at.is_(None), condition)):
+                        return  # preserve any user record rather than replacing it
+                tx.add(CheckinRow(elder_id=elder_id, type=category, local_date=day,
+                    occurred_at=occurred_at, task_id=task.id, payload_json=payload,
+                    slot_key=payload["meal_slot"] if category == "diet" else None,
+                    version=1, revisions_json=[], source="demo_seed", source_key=source,
+                    created_at=now, updated_at=now))
+                tx.flush()
+            for payload in template["diet"]:
+                slot = payload["meal_slot"]
+                add_record("diet", DietPayload.model_validate(payload).model_dump(mode="json"),
+                    saved["diet", slot], at_local(day, "12:00" if slot == "lunch" else "18:00"), slot)
+            for index, payload in enumerate(template["exercise"]):
+                add_record("exercise", ExercisePayload.model_validate(payload).model_dump(mode="json"),
+                    saved["exercise", "daily"], at_local(day, "17:00"), str(index))
+            for item in template["medication"]:
+                if len(plans) != 1 or item["plan_index"] >= len(plans):
+                    continue  # no configured medicine, no invented obligations
+                plan = plans[item["plan_index"]]
+                slot = next((s for s in plan.schedule["slots"] if s["slot_id"] == item["slot_id"]), None)
+                if slot is None or plan.schedule["mode"] != "fixed":
+                    continue  # fixture doesn't justify guessing another time/plan
+                task = add_task("medication", f'{plan.id}:{slot["slot_id"]}', f"演示历史 {plan.name}",
+                    at_local(day, slot["local_time"]), plan_id=plan.id, plan_version=plan.version,
+                    plan_snapshot={"plan_id": plan.id, "version": plan.version,
+                        "name": plan.name, "dose_display": plan.dose_display, "schedule": plan.schedule},
+                    dose_display=plan.dose_display)
+                payload = MedicationPayload(plan_id=plan.id, slot_id=slot["slot_id"],
+                    intake_status=item["intake_status"], notes="演示历史记录").model_dump(mode="json")
+                add_record("medication", payload, task, task.due_at, task.slot_key)
+        tx.flush()
 
     def list(self, tx, actor, elder_id, day, category=None, limit=20, cursor=None):
         authorize(tx, actor, elder_id, access=self.access)

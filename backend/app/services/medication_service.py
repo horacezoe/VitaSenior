@@ -14,7 +14,8 @@ from app.models.health import MedicationPlan as PlanRow, DailyTask, Checkin, Not
 from app.models.identity import ElderProfile
 from app.schemas.common import SourceRef
 from app.schemas.health import MedicationPlanWrite, MedicationPlan, PlanList, PlanPatch, SettingsPatch, ReminderSettings
-from app.services.health_service import authorize, at_local, conflict, invalid, materialize_tasks, settings_for
+from app.services.health_service import authorize, at_local, conflict, invalid, materialize_tasks, settings_for, live_records
+from datetime import timedelta
 
 
 def plan_dto(row):
@@ -96,6 +97,14 @@ class MedicationService:
                 applicable = candidate and candidate.start_date <= task.local_date and (candidate.end_date is None or candidate.end_date >= task.local_date)
                 if slot is None or not applicable:
                     unimplemented()  # needs A's task retirement model; see B.md
+                if task.local_date == local_date(now):
+                    new_due = at_local(task.local_date, slot.local_time) if candidate.schedule.mode == "fixed" else None
+                    if candidate.schedule.mode == "after_meal":
+                        meal = next((r for r in live_records(tx, elder_id, task.local_date)
+                            if r.type == "diet" and r.slot_key == slot.meal_slot), None)
+                        new_due = meal.occurred_at + timedelta(minutes=slot.delay_minutes) if meal else None
+                    if new_due and new_due <= now:
+                        continue  # preserve today's snapshot; don't backdate a changed obligation
                 changes.append((task, slot))
             row.version += 1
         if candidate:
@@ -136,6 +145,18 @@ class MedicationService:
         current = settings_for(tx, elder_id).model_dump(exclude={"version"})
         current.update(patch.model_dump(exclude_unset=True, mode="json"))
         result = ReminderSettings.model_validate({**current, "version": row.version + 1})
+        for task in tx.scalars(select(DailyTask).where(DailyTask.elder_id == elder_id,
+                DailyTask.local_date > local_date(self.clock.now()), DailyTask.category != "medication")):
+            if task.category == "diet":
+                target = next((m for m in result.meals if m.slot == task.slot_key and m.enabled), None)
+            else:
+                target = result.exercise if result.exercise.enabled else None
+            if target is None:
+                unimplemented()  # future goal retirement needs A's persistent state
+            task.due_at = at_local(task.local_date, target.local_time)
+            for notice in tx.scalars(select(Notification).where(Notification.related_task_id == task.id,
+                    Notification.delivery_state == "pending")):
+                notice.due_at = task.due_at
         row.reminder_settings_json = result.model_dump(mode="json", exclude={"version"})
         row.version += 1
         row.updated_at = self.clock.now()

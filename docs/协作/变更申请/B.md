@@ -18,3 +18,29 @@
 9. **亲情录音所有权**：MediaPort.get_asset 只返回公共 MediaAsset，不能验证是否“发起人本人上传”，只能验证访问权；请 A 冻结引用校验 port 或明确 get_asset 对 voice_message 写入引用的所有权约定。B 不直接读取 A 的媒体表或猜路径。
 
 B 分支会保持可合并提交；可用 `git fetch origin backend/health` 获取。未登记能力的 HTTP 继续501。原有公共测试和 schema 保留。
+
+## 合入 A1/A2（72d7610）后的实际验证与请求
+
+正常 merge 提交 `998ec83`；两个 B 文件的冲突已保留业务实现，并补齐 A2 的 get_plan/mark_proposal_handled/bind。本域48项已通过；增加真实 A 建档→B计划/历史导入 HTTP 测试也通过（测试显式 composition）。
+
+10. **公共能力一致性实际失败**：`python -m pytest tests -q --tb=short --basetemp=.pytest_cache/b-integrated` → **1 failed / 153 passed / 42 deselected**。失败是 `tests/framework/test_all_routes.py::test_every_p0_route_matches_its_capability[CHANGE04]`：B 的 mark_proposal_handled 已真实实现，使拒绝返回200；A仍登记CHANGE04=false，公共断言要求501。B没有改该公共测试，也没有把正常钩子改回桩。建议 A 对未验收入口统一能力门禁，或接齐依赖后实测并登记。B 的 perform 已在权限核对后按 capability 与同一 Clock 门禁。
+11. **A2 接真实 DTO 的代码审查问题**：ChangeService.create 使用 `notification.id`，但 Notification DTO 的真实字段是 `notification_id`（A测试替身有id，未覆盖此差异）。需要 A 修正；B不为通过测试给 DTO 偷加别名。另 `_apply` 的 medication 分支无论 operation 都 get_plan(target_id)：create 的 target_id=None，deactivate 传 EmptyPatch 而 MedicationPort 冻结为None；请 A 分支按冻结契约处理。
+12. **A2 系统入口与鉴权**：ChangeService._system_actor 当前构造老人 Actor 供扫描使用，未满足任务单“系统任务不伪造用户Actor”；mark_played 自身也未核对 actor/elder。B只通过 apply_due(tx,now) 调 A，不在 B复制这些状态机。请 A提供明确内部授权应用入口并复核 mark_played 权限。
+13. **A2 通知音频**：create 只传文字、不传audio；B禁止无音频的playback_completed，因此实际60秒窗口尚无法由前端完整走通。请 A/C冻结事务外 TTS或预制演示音频准备流程。B不在写锁内调用TTS、不把无音频的完成当成完整播报。
+
+可直接采用的 composition 接线（所有编辑仍由 A执行；先正常合入B与C）：
+
+```python
+access = AccessService()
+media = MediaService(clock, settings)
+memory = MemoryService(clock, access)  # C已发布的构造器
+medication = MedicationService(clock, access=access, media=media, memory=memory)
+checkins = CheckinService(clock, access=access, media=media, memory=memory)
+changes = ChangeService(clock, settings)
+notifications = NotificationService(clock, access=access, media=media, changes=changes)
+reports = ReportService(clock, access=access, memory=memory)
+changes.bind(medication=medication, notifications=notifications, memory=memory)
+# ServiceBundle: tasks=checkins, history=checkins；其余用上方实例。
+```
+
+CheckinService.today / import_demo_history 已在白名单 health_service.py 实现 A0 两个准确 port，无需 B 改 task_service.py/history_service.py。历史导入按 demo_id+elder 的 task.source_key 一次性去重、明确demo_seed、不建通知；多个药物计划或slot不匹配时不猜 fixture 的plan_index。当前实时扫描使用 `notifications.scan(tx, now)` 确定性内部方法；A可在现有tick_hook内同tx协调它与changes.apply_due，或补入正式系统port后交B接线。勿同时启用两套tick导致重复结算。

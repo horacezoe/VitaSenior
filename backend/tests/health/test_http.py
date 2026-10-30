@@ -19,8 +19,9 @@ def api(health, tmp_path):
     # Test-only explicit composition. Production must be connected by A; no
     # monkeypatch of the real composition or fake success response is used.
     bundle = replace(compose(h.clock, settings), checkins=h.checkins, medication=h.medication,
-                     reports=h.reports, tasks=h.checkins)
+                     reports=h.reports, tasks=h.checkins, history=h.checkins)
     app = create_app(settings, clock=h.clock, services=bundle)
+    app.state.capabilities_declared |= frozenset({"PLAN02", "PLAN03", "TASK01", "REC02", "REC03", "REPORT01"})
     with TestClient(app, raise_server_exceptions=False) as client:
         seed = framework_seed(app.state.sessions, h.clock)
         tokens = {}
@@ -112,3 +113,31 @@ def test_http_memory_failure_rolls_back_record_and_idempotency(api):
     recovered = client.put(f'/api/v1/checkins/{first["checkin_id"]}', json=correction, headers=headers)
     assert recovered.status_code == 200, recovered.text
     assert recovered.json()["data"]["version"] == 2
+
+
+def test_real_a_onboarding_imports_plans_and_history_once(api):
+    app, client, seed, tokens, h = api
+    created = client.post("/api/v1/demo/experiences", json={"scenario": "diabetes_daily"},
+        headers={"Idempotency-Key": "health-demo"})
+    assert created.status_code == 201, created.text
+    demo = created.json()["data"]
+    account = demo["elder_account"]
+    challenge = client.post("/api/v1/auth/code", json=account).json()["data"]["challenge_id"]
+    login = client.post("/api/v1/auth/login", json={**account, "challenge_id": challenge, "code": "123456"})
+    headers = {"Authorization": "Bearer " + login.json()["data"]["access_token"], "Idempotency-Key": "draft"}
+    elder = demo["elder_id"]
+    draft = client.post(f"/api/v1/elders/{elder}/onboarding/match", headers=headers,
+        json={"sample_identity_key": "community_sample_001"})
+    assert draft.status_code == 200, draft.text
+    data = draft.json()["data"]
+    body = {"draft_id": data["draft_id"], "profile": data["profile_draft"],
+        "medication_plans": data["medication_plan_drafts"], "expected_version": 1}
+    confirm = client.post(f"/api/v1/elders/{elder}/onboarding/confirm", headers=headers, json=body)
+    assert confirm.status_code == 200, confirm.text
+    with app.state.sessions() as tx:
+        count = tx.scalar(select(func.count()).select_from(Checkin).where(Checkin.elder_id == elder))
+        assert count > 14
+    replay = client.post(f"/api/v1/elders/{elder}/onboarding/confirm", headers=headers, json=body)
+    assert replay.status_code == 200 and replay.json()["data"] == confirm.json()["data"]
+    with app.state.sessions() as tx:
+        assert tx.scalar(select(func.count()).select_from(Checkin).where(Checkin.elder_id == elder)) == count

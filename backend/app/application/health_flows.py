@@ -27,6 +27,9 @@ def perform(auth, *, service_name, operation, elder_id=None, resource=None,
             elder_id = tx.get(RESOURCE_MODELS[kind], resource_id).elder_id
         else:
             check_access(request, tx, auth.actor, elder_id, scope)
+        operation_id = request.scope["route"].operation_id
+        if operation_id not in request.app.state.capabilities_declared:
+            unimplemented()
         if getattr(target, "clock", None) is not request.app.state.clock:
             unimplemented()
 

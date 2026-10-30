@@ -70,7 +70,7 @@ def make_notice(h, service, *, proposal=False, repeat_count=1, audio=True, sourc
         if proposal:
             uow.session.add(ChangeProposal(id="proposal", elder_id=h.elder,
                 created_by=h.actors["bound_child"].user_id, target_type="profile", target_id=h.elder,
-                operation="update", base_version=1, patch={"medical_notes": "演示修改"}))
+                operation="update", base_version=1, patch={"medical_notes": "演示修改"}, created_at=h.clock.now()))
             uow.session.flush()
         # Media FK exists; the MediaPort double handles access/playability only.
         if audio:
