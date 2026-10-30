@@ -1,0 +1,13 @@
+[
+  {"fixture_id":"meal_lunch","text":"这是我的演示午餐","expected_scene":"meal_checkin","expected_action":"record_diet"},
+  {"fixture_id":"ingredient_advice","text":"这些食材怎么搭配","expected_scene":"ingredient_advice","expected_action":null},
+  {"fixture_id":"exercise_walk","text":"我散步了20分钟","expected_scene":"exercise_checkin","expected_action":"record_exercise"},
+  {"fixture_id":"medication_ambiguous","text":"吃了药","expected_scene":"clarify","expected_action":null},
+  {"fixture_id":"medication_confirm","text":"确认这次按既定计划服药","expected_scene":"medication_checkin","expected_action":"record_medication"},
+  {"fixture_id":"binding_code","text":"生成绑定码","expected_scene":"binding_code","expected_action":"create_binding_code"},
+  {"fixture_id":"profile_update","text":"补充演示复查备注","expected_scene":"profile_update","expected_action":"update_profile"},
+  {"fixture_id":"daily_query","text":"今天的日报","expected_scene":"daily_query","expected_action":"query_report"},
+  {"fixture_id":"explicit_preference","text":"我喜欢清淡饮食","expected_scene":"memory_update","expected_action":null},
+  {"fixture_id":"reject_change","text":"拒绝刚才的修改","expected_scene":"reminder_response","expected_action":null},
+  {"fixture_id":"provider_timeout","text":"模拟模型超时","expected_error":"PROVIDER_TIMEOUT"}
+]

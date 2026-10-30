@@ -1,0 +1,23 @@
+[
+  {
+    "text": "我散步了20分钟。",
+    "sha256": "69f66a3e8612ab6566ac0b1c0aa8ad49077ce24eef891c485c250b35c5da97f1",
+    "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content",
+    "file": "exercise_input.wav",
+    "fixture_id": "exercise_walk"
+  },
+  {
+    "text": "【模拟】要记下这次散步20分钟吗？",
+    "sha256": "19eb63a278c4129d151d9e084d70770dfab0201612f06d779c1e9710ab31ffd9",
+    "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content",
+    "file": "exercise_reply.wav",
+    "fixture_id": "exercise_reply"
+  },
+  {
+    "text": "【模拟】我会记住这条明确表达的偏好。",
+    "sha256": "0cddfbb49e89aea5e7f9b9f6557b59ed184639554866ccf4217654ad443e87a9",
+    "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content",
+    "file": "preference_reply.wav",
+    "fixture_id": "preference_reply"
+  }
+]
