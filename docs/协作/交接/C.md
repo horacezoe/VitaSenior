@@ -1,4 +1,126 @@
-# C 交接：小安、mock 与长期记忆
+# C 最新状态：实现已交付，整体集成尚未就绪
+
+2026-10-31（Asia/Shanghai）。状态：**C2_IMPLEMENTED_PENDING_SHARED_FIXES / INTEGRATION_NOT_READY**。
+
+当前已验证提交：`0e9101a84479e5b012d764cebe454e0854f18d0f`；C2主体代码提交 `8fe7174c3ed48ce514c2d21f0bdddec6728cf474`。分支 `backend/agent`。本节覆盖后面的阶段性历史结果。
+
+本轮继续正常合入了 A 发布的 `integration/f1` = `21f9bff`，合并提交 `38bc09cde04567128ee97c48c23fa1b73f9dc9b9`。因此当前已包含真实 B 的服务，不再沿用“B全部是桩”的结论。
+
+## 最新实际结果
+
+- `python -m pytest tests/agent -q`：**63 passed, 1 warning in 9.48s**。含45个C1原语与18个C2 HTTP计数。
+- `python -m pytest tests -q --tb=short`：**1 failed, 220 passed, 42 deselected, 1 warning in 41.47s**。不能宣称全量绿。
+- 唯一失败：`test_every_p0_route_matches_its_capability[CHANGE04]`；真实C来源失效可用后，A接受提案已返回200，但A能力仍为false，框架严格要求501。C保留公共测试与A能力文件，待A按真实状态修正登记/门禁。
+- `python -m app.tools.export_contract --check`：通过；hash为 `6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d`。
+- `python -m app.tools.check_architecture`：通过。
+- `python -m app.tools.integration_smoke`：**20 ok / 9 pending / 0 failed**，PENDING不是业务通过。
+
+测试均为临时SQLite、FakeClock、锁定依赖。唯一warning为原有Starlette/httpx弃用提示。C2 HTTP环境使用明确依赖注入；默认部署没有偷偷组装C服务或启用能力。
+
+## 新增真实跨域验证
+
+已用真实 A/B/C 服务完成：C mock运动规划→健康表仍零条→确认动作→B真实写入一条打卡→重复确认仍一条→B真实日报包含相同checkin_id，运动完成数为1。没有直接改B表代替写port。
+
+当前冻结B port没有Agent来源参数，实际返回的记录source仍为user。C未直接改表冒充agent_confirmed，该来源标记差异仍是A/B共享契约缺口，不能宣称该项业务验收已完成。缺失B的回滚测试已改成明确注入的测试替身；正常实际B服务不再被当占位。
+
+A在integration/f1已修复原notification.id/notification_id差异，此问题不再阻塞；C默认部署的7个HTTP入口仍因缺少A-owned装配而明确501/capability=false，等待接线。
+
+## A 的剩余操作
+
+用户明确要求公共文件由A修改。C的实际功能/测试修改只在白名单；共享变化均来自A已发布的正常merge。准确候选代码和最新失败已写入 `docs/协作/变更申请/C.md`：
+
+1. composition复用已有access/media/B实例，仅将现有MemoryService改为传同一个clock/access，并构造AgentService与三个mock provider。
+2. main连接app.state.agent/agent_chat/agent_asr/agent_tts。
+3. Runtime.providers允许mock，重导出并审核仅此枚举的OpenAPI变化。
+4. 同次集成启用C2_OPERATIONS及真实mock PROVIDERS；C已在申请中明确授权集成人一次性激活该C注册文件。
+5. 修正CHANGE04能力与实际接受路径的不一致，重新跑全量；不要放宽框架断言或让C记忆服务故意抛501。
+
+TaskPort/HistoryPort仍接A0占位实例，B对应原语已存在；其接线及其他健康能力仍由A/B处理。自动规律的当前证据读取、来源标记、手机/真实供应商和零PENDING三轮业务验收仍未完成。
+
+以下为此前C2/C1历史记录，保留签名与流程说明；以本节的最新测试和未就绪状态为准。
+
+---
+
+
+# C2 前一批历史交接：尚未合入 integration/f1
+
+日期：2026-10-31（Asia/Shanghai）。状态：**C2_IMPLEMENTED_PENDING_A_ASSEMBLY**。本批代码提交 `8fe7174c3ed48ce514c2d21f0bdddec6728cf474`；分支 `backend/agent`。本记录之后单独提交，不回填自身 commit。
+
+已正常 merge `f1-shared-v1`（A0）与 `origin/backend/platform` 的 `72d7610ba398588f0201b1bdde9a7344e999804e`（A1/A2及联调脚本），无冲突且保留 C1 历史。**用户明确指定公共文件交 A 修改**，因此本批只改 C 白名单；composition/main/schema/OpenAPI 未由 C 修改。
+
+## 本批完成与真实运行状态
+
+- 已实现 AI01/02、AGENT01/02、MEM01–03 的 C 路由和 application flow。
+- HTTP 测试明确注入与目标装配一致的 AgentService、同一个 Clock/MemoryService 和纯 mock providers，使用真实 A 登录、ProfilePort、BindingPort、MediaPort、提案查询/决策。没有把测试注入装到正常运行路径。
+- 默认 create_app 仍未提供 `app.state.agent/agent_chat/agent_asr/agent_tts`。C 的 `_ready` 在真实身份/资源检查后明确返回 `501 MODULE_NOT_IMPLEMENTED`，避免缺属性500。C 的 CAPABILITIES 仍为空、PROVIDERS 仍为 not_implemented，与部署状态一致。
+- C-owned `agent_capabilities.py` 已列出通过实现测试的 `C2_OPERATIONS`，**不是已启用的能力清单**。A 完成接线及 Runtime schema 修正后，在同一次集成中启用注册并复验；具体代码见 `docs/协作/变更申请/C.md` 的 C2 段落。
+
+## C2 流程与验证事实
+
+1. 使用 A0 Auth 先做短读鉴权，释放 Session；ASR、chat、TTS 和媒体内容字节读取均在事务外。
+2. 重新开启短写 UoW，重新验证实际会话、本人权限、关联通知、档案与记忆版本；成功业务、动作/轮次/记忆与幂等结果在一次提交里保存。Provider 期间的独立写连接已实测可提交。
+3. client_turn_id 重放跳过 provider；同 key 异体409，失败不缓存。档案动作经真实 A 更新一次，重复 HTTP 确认不再增加版本。用户下一轮“确认”也可执行唯一/指定的同一动作。
+4. C 的确认执行器支持现有冻结 ports 的打卡、档案、计划、绑定码、日报、提案决策、普通提醒处理。B 仍501时如实回滚，动作保留 pending；取消不需要 B。未把 B 的缺口转成假成功。
+5. 关联通知由 A0 共享资源 guard 在读/写阶段检查；proposal_id 通过真实 A 的分页查询按 notification_id 关联查出，不把两个 ID 当同一个。测试验证已有提案被真实 A 状态机拒绝、目标档案不变、auto_apply_at 仍为空；只用明确 B 关闭通知测试替身。
+6. 模型工具只能处理 snoozed/handled/dismissed，不允许制造 displayed/answered/playback_completed；播放不记录 taken。
+7. 音频先通过真实 A MediaPort 验权和取受控句柄；生成语音交 A register_generated，再用 ticket 内容地址实际取回完整 WAV 字节。text+audio 时 text 是已校正转写，不重复 ASR。
+8. TTS 只有完整文本一致的四个真实固定中文语音；新增“您好”及其可复现生成脚本/哈希。未知文本501，Agent保留文字并标 tts_unavailable；没有静音、音调或不匹配语音冒充内容。
+9. Memory HTTP 支持本人修正/删除、版本冲突与幂等；绑定子女只读。修正/删除后新会话读取新上下文，保留来源/修订与旧候选抑制。
+
+## C 白名单文件
+
+- application/agent_flows.py、routers/agent.py
+- services/agent_service.py、services/agent_capabilities.py
+- providers/planning.py、providers/mock_chat.py
+- fixtures/agent（新增 greeting.wav、更新清单/脚本/说明）
+- tests/agent/test_http.py（新增17个实际HTTP测试计数，含参数化）
+- docs/协作/变更申请/C.md 与本记录
+
+其他共享文件仅来自 A 的正常 merge。本批未改依赖、前端或其他领域实现，也未新建第二套 DTO/鉴权/数据库。
+
+## 实际验证
+
+backend 工作目录，Windows / Python 3.13.9 / 原 requirements.lock / 独立临时 SQLite / 同一 FakeClock：
+
+```text
+python -m pytest tests -q
+171 passed, 42 deselected, 1 warning in 34.62s
+
+python -m pytest tests/agent -q
+62 passed, 1 warning in 9.26s
+
+python -m app.tools.export_contract --check
+OpenAPI matches 6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d
+
+python -m app.tools.check_architecture
+Architecture OK: no cross-domain implementation imports
+
+python -m app.tools.integration_smoke
+19 ok, 9 pending, 0 failed
+```
+
+全量171含 A/框架109与 C62。62项 C 测试包括 C1 45 + C2 HTTP 17。补充问候语音后 C62再通过。42 deselected 是 A0 分类的历史 F0 snapshot；唯一 warning 是既有 Starlette/httpx 弃用提示，未屏蔽。
+
+正常未接线部署的 smoke 中 C 相关步骤仍为 PENDING，明确报告“C2 awaits A-owned composition wiring”；不把 PENDING 算成功。HTTP业务验证使用 TestClient 和明确装配测试环境，本轮没有启动持久 uvicorn 服务或进行手机播放测试。
+
+## A 需要完成的最小接手
+
+完整代码块在 `docs/协作/变更申请/C.md`。核心是：
+
+- composition 用 `MemoryService(clock, access)`，并构造 `AgentService(clock, services, services.memory)` 与 MockUnderstanding/MockASR/MockTTS。
+- main 设置 `app.state.agent` 及 `agent_chat/agent_asr/agent_tts`。
+- Runtime.providers 当前只接受 not_implemented；允许 mock 并真实重导出 OpenAPI，否则设置真实 provider 状态会500。
+- 在同一个集成提交启用 C2_OPERATIONS 和 mock PROVIDERS，避免代码、能力、schema 分批不一致。C 已在变更申请中明确授权集成人进行这次 C 注册激活。
+- 先跑 tests/agent、全量 tests、契约/架构工具，再跑 integration_smoke；B未就绪的 PENDING 应继续如实保留。
+
+额外具体缺口已记录：A ChangeService.create 使用 notification.id，而冻结 Notification DTO 是 notification_id；B Task/计划/通知/打卡来源和规律证据读取仍需各自完成。本批没有借测试替身宣称这些跨三域闭环已完成。
+
+**未运行/未完成**：A-owned 装配与 Runtime schema 修改、默认部署 C 能力激活、B真实写入/通知/历史全链路、自动规律证据读取、真实供应商、手机HTTPS/播放器、严格零PENDING三轮集成。以下保留 C1 历史记录，当前状态以上方 C2 为准。
+
+---
+
+
+# C1 历史交接：小安、mock 与长期记忆
 
 日期：2026-10-31（Asia/Shanghai）。状态：**C1_READY；C2_WAITING_A0**。用户已确认 A0 尚未完成，A/C 正在同时开发。本记录不宣称 C2 HTTP、音频登记或跨领域真实业务闭环已经完成。
 

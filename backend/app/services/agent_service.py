@@ -1,4 +1,4 @@
-"""C1 transaction-safe primitives; A0 owns HTTP orchestration and composition.
+"""Transaction-safe C primitives; C flows own orchestration, A owns composition.
 
 read_snapshot -> RELEASE read UoW -> provider.plan -> new write UoW ->
 record_turn -> caller.commit. No provider is called from a Session method.
@@ -10,7 +10,7 @@ import json
 from collections.abc import Mapping, Sequence
 from datetime import date
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.core.errors import AppError
 from app.core.ids import new_id
 from app.models.agent import AgentAction as ActionRow, AgentTurn as TurnRow
 from app.providers.planning import Plan, Snapshot, request_digest
+from app.providers.mock_audio import Speech
 from app.services.memory_service import MemoryService
 from app.schemas.agent import (
     Action, ActionDecision, ActionResult, AgentTurn, AgentTurnWrite, MemoryEntry,
@@ -29,8 +30,9 @@ from app.schemas.agent import (
 from app.schemas.common import SourceRef
 from app.schemas.health import (
     Checkin, CheckinWrite, DietPayload, ExercisePayload, MedicationPayload, DailyReport, DailyTask,
+    MedicationPlanWrite, PlanUpdate, NotificationEvent,
 )
-from app.schemas.identity import Profile, ProfileUpdate, BindingCode
+from app.schemas.identity import Profile, ProfileUpdate, BindingCode, ChangeDecision
 
 
 class AgentService:
@@ -62,10 +64,9 @@ class AgentService:
             turn = tx.get(TurnRow, action.turn_id)
             if request.conversation_id and turn.conversation_id != request.conversation_id:
                 raise AppError(404, "NOT_FOUND", "Action is not in this conversation")
-        if request.context.notification_id:
-            # No safe notification lookup port yet. Never confuse notification_id
-            # with proposal_id or read B's table behind its service boundary.
-            raise AppError(501, "MODULE_NOT_IMPLEMENTED", "A0 notification lookup port required")
+        # Notification resource checks are performed by the application using
+        # A0 check_resource in BOTH the short read and fresh write UoWs. C never
+        # reads B's ORM tables or equates notification_id with proposal_id.
 
     def replay(self, tx: Session, actor: Actor, request: AgentTurnWrite) -> AgentTurn | None:
         self._references(tx, actor, request)
@@ -84,8 +85,8 @@ class AgentService:
                       medication_slots: Mapping[str, str] | None = None) -> Snapshot:
         """Optional DTOs must come from A/B ports in this same short read UoW.
 
-        On F1 baseline those read ports do not exist, so normal HTTP integration
-        is deliberately deferred; module tests inject explicit DTO fixtures.
+        Application flows use the A0 read ports. Tests may supply explicit DTO
+        fixtures; normal execution must never pass guessed or cached evidence.
         """
         self._references(tx, actor, request)
         if profile is not None and profile.elder_id != request.elder_id:
@@ -101,7 +102,7 @@ class AgentService:
                         tuple(tx.scalars(pending).all()))
 
     def record_turn(self, tx: Session, actor: Actor, request: AgentTurnWrite,
-                    snapshot: Snapshot, plan: Plan) -> AgentTurn:
+                    snapshot: Snapshot, plan: Plan, *, speech: Speech | None = None) -> AgentTurn:
         """In a fresh write UoW; failure must roll back turn/actions/tool/memory."""
         old = self.replay(tx, actor, request)
         if old is not None:
@@ -139,7 +140,7 @@ class AgentService:
             tx.add(action)
             tx.flush()
             if not public.requires_confirmation:
-                if public.type not in {"create_binding_code", "query_report"}:
+                if public.type not in {"create_binding_code", "query_report", "decide_change", "respond_notification"}:
                     raise AppError(422, "VALIDATION_ERROR", "Writes require explicit confirmation")
                 direct = self._execute(tx, actor, action, None)
                 action.status = "confirmed"
@@ -161,12 +162,19 @@ class AgentService:
             # Same-domain write helper, not an invented cross-domain port method.
             memory = self.memory.remember(tx, actor, request.elder_id, memory_entry)
         memory = self.services.memory.context(tx, actor, request.elder_id)
+        audio_asset_id = None
+        if speech is not None and speech.text == reply:
+            asset = self.services.media.register_generated(
+                tx, actor, request.elder_id, content=speech.content, mime_type=speech.mime_type,
+                purpose="agent_audio", duration_ms=speech.duration_ms)
+            audio_asset_id = asset.asset_id
         response = AgentTurn(
-            turn_id=row.id, conversation_id=row.conversation_id, transcript=request.text or "",
-            reply=Reply(text=reply), scene=plan.scene, avatar_state="idle", actions=public_actions,
+            turn_id=row.id, conversation_id=row.conversation_id, transcript=plan.transcript or request.text or "",
+            reply=Reply(text=reply, audio_asset_id=audio_asset_id), scene=plan.scene,
+            avatar_state="speaking" if audio_asset_id else "idle", actions=public_actions,
             memory=MemoryChange(version=memory.version, changed=memory.version != snapshot.memory.version),
-            providers=Providers(chat="mock", asr="not_used", tts="not_used"),
-            degraded=["tts_unavailable"],
+            providers=Providers(chat="mock", asr=plan.asr_provider, tts="mock" if audio_asset_id else "not_used"),
+            degraded=[] if audio_asset_id else ["tts_unavailable"],
         )
         row.response_json = response.model_dump(mode="json", exclude_unset=True)
         tx.flush()
@@ -220,14 +228,31 @@ class AgentService:
 
     @staticmethod
     def _validate_payload(kind, payload):
-        if kind in {"record_diet", "record_exercise", "record_medication"}:
-            body = TypeAdapter(CheckinWrite).validate_python(payload['checkin'])
-            if kind != 'record_' + body.type:
-                raise AppError(422, "VALIDATION_ERROR", "Checkin type differs from action")
-        elif kind == "update_profile":
-            ProfileUpdate.model_validate(payload['update'])
-        elif kind not in {"create_binding_code", "query_report"}:
-            raise AppError(501, "MODULE_NOT_IMPLEMENTED", "Action requires an A0 tool port")
+        try:
+            if kind in {"record_diet", "record_exercise", "record_medication"}:
+                body = TypeAdapter(CheckinWrite).validate_python(payload['checkin'])
+                if kind != 'record_' + body.type:
+                    raise AppError(422, "VALIDATION_ERROR", "Checkin type differs from action")
+            elif kind == "update_profile":
+                ProfileUpdate.model_validate(payload['update'])
+            elif kind == "create_medication_plan":
+                MedicationPlanWrite.model_validate(payload['plan'])
+            elif kind == "update_medication_plan":
+                PlanUpdate.model_validate(payload['update'])
+            elif kind == "decide_change":
+                ChangeDecision(decision=payload['decision'])
+                if not payload.get('proposal_id'):
+                    raise ValueError('proposal_id required')
+            elif kind == "respond_notification":
+                event = NotificationEvent.model_validate(payload['event'])
+                if event.event_type not in {"handled", "snoozed", "dismissed"}:
+                    raise ValueError('Only the actual player may send playback receipts')
+                if not payload.get('notification_id'):
+                    raise ValueError('notification_id required')
+            elif kind not in {"create_binding_code", "query_report"}:
+                raise AppError(501, "MODULE_NOT_IMPLEMENTED", "Tool is not implemented")
+        except (KeyError, ValueError, ValidationError) as exc:
+            raise AppError(422, "VALIDATION_ERROR", "Saved action is missing valid execution parameters") from exc
 
     def _execute(self, tx, actor, row, decision):
         payload = row.payload_json
@@ -263,6 +288,38 @@ class AgentService:
             if amendments is not None:
                 raise AppError(422, "VALIDATION_ERROR", "Report date is fixed in the action")
             output = self.services.reports.daily(tx, actor, row.elder_id, date.fromisoformat(payload['date']))
+        elif row.type in {"create_medication_plan", "update_medication_plan"}:
+            create = row.type == "create_medication_plan"
+            if create:
+                body = MedicationPlanWrite.model_validate(payload['plan'])
+                if amendments is not None:
+                    if type(amendments) is not MedicationPlanWrite:
+                        raise AppError(422, "VALIDATION_ERROR", "Amendment must be a complete medication plan")
+                    body = amendments
+                output = self.services.medication.apply_change(tx, actor, row.elder_id, "create", None, body, None)
+            else:
+                body = PlanUpdate.model_validate(payload['update'])
+                plan = self.services.medication.get_plan(tx, actor, payload['target_id'])
+                if plan.elder_id != row.elder_id or plan.version != body.expected_version:
+                    raise AppError(409, "VERSION_CONFLICT", "Medication plan changed")
+                if amendments is not None:
+                    if type(amendments) is not PlanUpdate or amendments.expected_version != body.expected_version:
+                        raise AppError(422, "VALIDATION_ERROR", "Amendment has a different type/version")
+                    body = amendments
+                output = self.services.medication.apply_change(tx, actor, row.elder_id, "update", payload['target_id'], body.patch, body.expected_version)
+        elif row.type == "decide_change":
+            if amendments is not None:
+                raise AppError(422, "VALIDATION_ERROR", "Change decision has no amendments")
+            proposal = self.services.changes.read(tx, actor, payload['proposal_id'])
+            if proposal.elder_id != row.elder_id:
+                raise AppError(404, "NOT_FOUND", "Proposal unavailable")
+            output = self.services.changes.decide(tx, actor, proposal.proposal_id,
+                                                  ChangeDecision(decision=payload['decision']), self.clock.now())
+        elif row.type == "respond_notification":
+            if amendments is not None:
+                raise AppError(422, "VALIDATION_ERROR", "Notification event has no amendments")
+            output = self.services.notifications.handle_event(tx, actor, payload['notification_id'],
+                                                               NotificationEvent.model_validate(payload['event']), self.clock.now())
         else:
             raise AppError(501, "MODULE_NOT_IMPLEMENTED", "Tool is not implemented")
         if isinstance(output, (Checkin, Profile, DailyReport)) and output.elder_id != row.elder_id:
