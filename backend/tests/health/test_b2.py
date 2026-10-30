@@ -312,3 +312,27 @@ def test_corrected_after_meal_notice_reuses_delivery_without_new_call(notices, d
         assert repeated.notification_id == notice.notification_id
         assert repeated.delivery_state == ("displayed" if displayed else "pending")
         uow.commit()
+
+
+def test_scanner_resumes_snoozed_todo_after_restart_without_new_delivery(notices):
+    h, service, change = notices
+    notice = make_notice(h, service)
+    heartbeat(h, service)
+    event(h, service, notice, "displayed")
+    event(h, service, notice, "snoozed", snooze_minutes=1)
+    restarted = NotificationService(h.clock, media=MediaDouble(h.clock), changes=change)
+    h.clock.advance(seconds=59)
+    with UnitOfWork(h.factory) as unit:
+        restarted.scan(unit.session, h.clock.now())
+        unit.commit()
+    with h.factory() as tx:
+        assert tx.get(Notification, notice.notification_id).task_state == "snoozed"
+    h.clock.advance(seconds=2)
+    with UnitOfWork(h.factory) as unit:
+        restarted.scan(unit.session, h.clock.now())
+        unit.commit()
+    with h.factory() as tx:
+        row = tx.get(Notification, notice.notification_id)
+        assert row.task_state == "open" and row.delivery_state == "displayed"
+        assert row.played_at is None
+        assert tx.scalar(select(func.count()).select_from(Checkin)) == 0

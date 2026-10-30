@@ -1,10 +1,14 @@
 from app.contracts.bundle import ServiceBundle
+from app.contracts.context import Actor
+from collections.abc import Callable
+from sqlalchemy.orm import Session
 from app.core.errors import unimplemented
 from app.core.idempotency import StoredResult
 from app.core.uow import UnitOfWork
 from app.core.auth import authenticate
 from app.core.errors import AppError
-from app.schemas.health import NotificationEnqueue
+from app.schemas.health import Checkin, NotificationEnqueue
+from app.schemas.common import DTO
 from pathlib import Path
 import json
 import hashlib
@@ -13,13 +17,13 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 
-def perform(auth, *, service_name, operation, elder_id=None, resource=None,
+def perform(auth, *, service_name: str, operation: Callable[[ServiceBundle, Session, Actor, str], DTO], elder_id=None, resource=None,
             scope="read", body=None, key=None, status=200, snapshot=False):
     """Short transaction coordinating frozen ports and shared idempotency.
 
     Read endpoints that materialize goals deliberately use BEGIN IMMEDIATE so
     concurrent TASK/report requests cannot race the daily unique constraint.
-    Until A connects the application clock in composition, fail explicitly.
+    Unwired bundles fail explicitly instead of mixing service/application clocks.
     """
     request = auth.request
     services = request.app.state.services
@@ -43,7 +47,7 @@ def perform(auth, *, service_name, operation, elder_id=None, resource=None,
 
         def execute():
             result = operation(services, tx, actor, elder_id)
-            actual_status = 200 if status == 201 and service_name == "checkins" and result.version > 1 else status
+            actual_status = 200 if status == 201 and isinstance(result, Checkin) and result.version > 1 else status
             return StoredResult(actual_status, result.model_dump(mode="json", exclude_unset=True))
 
         if key is not None:
@@ -56,11 +60,6 @@ def perform(auth, *, service_name, operation, elder_id=None, resource=None,
     if status == 201 and service_name == "checkins" and result.status_code == 200:
         response["meta"].replaced = True
     return JSONResponse(status_code=result.status_code, content=jsonable_encoder(response))
-
-def unavailable(services: ServiceBundle) -> None:
-    """F2 replaces this entry with named flows coordinating typed ports and UoW."""
-    unimplemented()
-
 
 def family_reminder(auth, elder_id, body, key):
     """Prepare fixed speech / controlled user recording bytes outside the write

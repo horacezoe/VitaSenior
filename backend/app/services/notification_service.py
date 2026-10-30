@@ -232,6 +232,11 @@ class NotificationService:
         """
         day = local_date(now)
         result = []
+        for notice in tx.scalars(select(NoticeRow).where(NoticeRow.task_state == "snoozed",
+                NoticeRow.proposal_id.is_(None), NoticeRow.snoozed_until <= now)):
+            # Resume the todo without pretending a new delivery or playback
+            # happened. Persistent deadlines survive process restarts.
+            notice.task_state = "open"
         for elder in tx.scalars(select(ElderProfile).order_by(ElderProfile.id)):
             tasks = materialize_tasks(tx, elder.id, day, now)
             records = live_records(tx, elder.id, day)
