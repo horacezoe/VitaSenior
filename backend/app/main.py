@@ -11,7 +11,7 @@ from app.core.db import build_engine, create_tables, sessions
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.core.idempotency import Idempotency
-from app.composition import compose, compose_identity
+from app.composition import compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
 from app.schemas.common import Envelope, ErrorEnvelope, ErrorDetail, Meta
@@ -39,7 +39,11 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
             engine.dispose()
     app = FastAPI(title="VitaSenior", version="0.1.0", lifespan=lifespan)
     app.state.settings, app.state.clock = settings, clock
-    app.state.services = services or compose()
+    app.state.services = services or compose(clock, settings)
+    # The only place capability/provider declarations are read; routers/system.py
+    # just renders them so the three developers never edit one shared list.
+    app.state.capabilities_declared = declared_capabilities()
+    app.state.providers = providers()
     app.state.identity = compose_identity(clock)
     app.state.idempotency = Idempotency(clock)
     app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval)

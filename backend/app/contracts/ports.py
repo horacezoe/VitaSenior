@@ -3,37 +3,86 @@
 All methods (including reads) receive the SAME caller transaction and Actor.
 No method commits, rolls back, opens a session, or calls external providers.
 Caller performs provider work outside its write UoW, then rechecks permissions.
+
+F0 froze this surface; A0 (shared adaptation) extended it so B/C no longer guess
+signatures. `UNAVAILABLE` ports still raise 501 MODULE_NOT_IMPLEMENTED - see
+docs/协作/交接/A.md for the exact status per port at the f1-shared-v1 tag.
 """
 from datetime import datetime, date
 from typing import Protocol, Literal
 from sqlalchemy.orm import Session
 from app.contracts.context import Actor, ElderAccess, WriteScope
-from app.schemas.common import SourceRef
-from app.schemas.identity import BindingCode, Profile, ProfilePatch, ChangeProposal, MediaAsset
-from app.schemas.health import MedicationPlanWrite, MedicationPlan, PlanPatch, CheckinWrite, CheckinUpdate, Checkin, NotificationEnqueue, Notification, DailyReport
+from app.contracts.media import MediaContent
+from app.schemas.common import SourceRef, Page
+from app.schemas.enums import ProposalStatus
+from app.schemas.identity import (
+    BindingCode, BindingPreview, BindingResult, ElderList, EventResult, Profile, ProfilePatch,
+    ChangeDecision, ChangeProposal, ChangeProposalWrite, MediaAsset,
+)
+from app.schemas.health import (
+    MedicationPlanWrite, MedicationPlan, PlanPatch, CheckinWrite, CheckinUpdate, Checkin,
+    NotificationEnqueue, NotificationEvent, Notification, DailyReport, TaskList,
+)
 from app.schemas.agent import MemoryDocument
 
 class AccessPort(Protocol):
     def require_elder_access(self, tx: Session, actor: Actor, elder_id: str, write_scope: WriteScope = "read") -> ElderAccess: ...
+
 class BindingPort(Protocol):
     def issue_code(self, tx: Session, actor: Actor, elder_id: str) -> BindingCode: ...
+    def preview(self, tx: Session, actor: Actor, code: str) -> BindingPreview: ...
+    def consume(self, tx: Session, actor: Actor, code: str, relationship: str) -> BindingResult: ...
+    def list_elders(self, tx: Session, actor: Actor) -> ElderList: ...
+
 class ProfilePort(Protocol):
+    def read(self, tx: Session, actor: Actor, elder_id: str) -> Profile: ...
     def update(self, tx: Session, actor: Actor, elder_id: str, expected_version: int, patch: ProfilePatch) -> Profile: ...
+
 class ChangePort(Protocol):
+    """A owns the proposal state machine. B calls mark_played inside the same tx
+    as the playback receipt; the scanner calls apply_due. C must call decide()
+    rather than reimplementing status transitions."""
+    def create(self, tx: Session, actor: Actor, elder_id: str, body: ChangeProposalWrite, now: datetime) -> ChangeProposal: ...
+    def query(self, tx: Session, actor: Actor, elder_id: str, status: ProposalStatus | None, limit: int, cursor: str | None) -> Page[ChangeProposal]: ...
+    def read(self, tx: Session, actor: Actor, proposal_id: str) -> ChangeProposal: ...
+    def decide(self, tx: Session, actor: Actor, proposal_id: str, decision: ChangeDecision, now: datetime) -> ChangeProposal: ...
     def mark_played(self, tx: Session, actor: Actor, proposal_id: str, now: datetime) -> ChangeProposal: ...
     def apply_due(self, tx: Session, now: datetime) -> list[ChangeProposal]: ...
+
 class MedicationPort(Protocol):
     def import_draft(self, tx: Session, actor: Actor, elder_id: str, plans: list[MedicationPlanWrite]) -> list[MedicationPlan]: ...
     def apply_change(self, tx: Session, actor: Actor, elder_id: str, operation: Literal["create", "update", "deactivate"], target_id: str | None, patch: MedicationPlanWrite | PlanPatch | None, expected_version: int | None) -> MedicationPlan: ...
+
 class CheckinPort(Protocol):
     def create_or_update(self, tx: Session, actor: Actor, elder_id: str, payload: CheckinWrite | CheckinUpdate, checkin_id: str | None = None) -> Checkin: ...
+
 class NotificationPort(Protocol):
+    """handle_event owns the whole receipt semantics: state order, presence check,
+    full repeat playback and - in the SAME tx - the proposal window start.
+    The notification service is composed with the ChangePort, so the transition
+    is never reimplemented by C."""
     def enqueue(self, tx: Session, actor: Actor, source_key: str, payload: NotificationEnqueue) -> Notification: ...
+    def handle_event(self, tx: Session, actor: Actor, notification_id: str, event: NotificationEvent, now: datetime) -> EventResult: ...
+
+class TaskPort(Protocol):
+    def today(self, tx: Session, actor: Actor, elder_id: str, day: date) -> TaskList: ...
+
 class ReportPort(Protocol):
     def daily(self, tx: Session, actor: Actor, elder_id: str, day: date) -> DailyReport: ...
+
 class MemoryPort(Protocol):
     def on_source_changed(self, tx: Session, actor: Actor, elder_id: str, source_ref: SourceRef) -> None: ...
     def context(self, tx: Session, actor: Actor, elder_id: str) -> MemoryDocument: ...
 
 class MediaPort(Protocol):
+    """C references A media only through this port: no table access, no paths."""
     def get_asset(self, tx: Session, actor: Actor, asset_id: str) -> MediaAsset: ...
+    def store_upload(self, tx: Session, actor: Actor, *, elder_id: str | None, purpose: str, filename: str, content_type: str, content: bytes) -> MediaAsset: ...
+    def open_content(self, tx: Session, actor: Actor | None, asset_id: str, *, ticket: str | None = None) -> MediaContent: ...
+    def register_generated(self, tx: Session, actor: Actor, elder_id: str, *, content: bytes, mime_type: str, purpose: str, duration_ms: int | None) -> MediaAsset: ...
+
+class HistoryPort(Protocol):
+    """Unified entry A calls after ONB02 for matched demo drafts. B contributes the
+    fixture rows (daily_tasks/checkins, source=demo_seed); C contributes memory
+    entries. Deduplicated by demo_id/source_key, so a repeated confirm is a no-op."""
+    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int) -> None: ...
