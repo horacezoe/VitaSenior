@@ -29,3 +29,54 @@ C 已用 exclude_unset=True 保存动作及轮次/结果 JSON，且有 profile_a
 发布 f1-shared-v1 后 C 正常 merge；读取真实新增签名和 capability 约定；把 MemoryService/AgentService/纯 mock provider 接入集中 composition；先接 MEM01–03，随后按“短读鉴权→退出Session→ASR/chat/TTS→短写重新验权/版本/幂等→一次commit”接 AGENT/AI。
 
 C1 不改 tests/framework。原63个 F0 snapshot 用例仍通过；C2 启用接口前仍需 A0 分类占位测试。没有 agent_capabilities.py 是因为任务单明确要求 A0 先建立统一机制。C2 不能把已存在的服务测试成功直接当作 HTTP 能力已可用。
+
+
+## C2 更新：已合入 A0/A1/A2，用户指定公共文件仍由 A 修改
+
+已正常合入 f1-shared-v1（10d51af）和 backend/platform 72d7610，均无冲突。用户本轮明确选择“公共文件交 A 修改，C 继续自身范围”。因此 C 没有写 composition/main/schema/OpenAPI；新增C路由默认使用 _ready 检查，未接线时返回501且capability=false，不会因缺少 app.state.agent 而500。
+
+C2 已完成7个HTTP入口和明确DI集成测试，使用真实 A 的登录、档案、绑定码、媒体读写及提案读/决策；B未完成的端口依旧501并回滚。具体公共接线候选如下。
+
+### A 请在同一集成提交中完成装配、schema与能力启用
+
+composition.py（唯一具体实现构造点）：
+
+```python
+from app.services.agent_service import AgentService
+from app.providers.mock_chat import MockUnderstanding
+from app.providers.mock_audio import MockASR, MockTTS
+
+# compose() 里替换原 memory = MemoryService() 和 access=AccessService()：
+access = AccessService()
+memory = MemoryService(clock, access)
+# ServiceBundle(access=access, memory=memory, ...)
+
+def compose_agent(clock, services):
+    return AgentService(clock, services, services.memory)
+
+def compose_agent_providers():
+    return MockUnderstanding(), MockASR(), MockTTS()
+```
+
+main.py：从composition导入以上两个工厂，在app.state.services创建后接线：
+
+```python
+app.state.agent = compose_agent(clock, app.state.services)
+app.state.agent_chat, app.state.agent_asr, app.state.agent_tts = compose_agent_providers()
+```
+
+schemas/system.py：`Runtime.providers` 当前是 `dict[str, Literal["not_implemented"]]`；改为 `dict[str, Literal["not_implemented", "mock"]]`，然后实际运行 export_contract 导出并审核仅此枚举差异。
+
+C-owned agent_capabilities.py 已提供 `C2_OPERATIONS`，但当前 `CAPABILITIES` 保持空、`PROVIDERS` 保持not_implemented，与默认未接线状态一致。完成上述修正时，C授权集成人在同一提交启用 `CAPABILITIES=C2_OPERATIONS` 与 `PROVIDERS={"chat":"mock","asr":"mock","tts":"mock"}`，并跑完整回归。不要只改能力不接线，也不要只接线不修Runtime枚举；否则分别造成假能力、500或能力声明与响应不一致。
+
+### 额外发现的真实跨域契约差异
+
+A ChangeService.create 当前使用 `notification.id`，但冻结 NotificationPort.enqueue 声明返回公开 Notification，其主键字段为 `notification_id`。A的既有测试替身返回SimpleNamespace(id=...)会掩盖这一差异；真实B返回DTO后可能500。请A/B统一，不让C补兼容DTO或改A实现。本轮C的提案测试从明确的已存在提案fixture开始，调用真实A query/read/decide；只替换B的关闭通知hook，不把这视作CHANGE01跨三域创建已通过。
+
+B还需落地TaskPort.today/MedicationPort.get_plan、通知handle_event与Checkin来源标记。C的用药快照从真实计划slots匹配原始slot_id，不直接拆slot_key；当前计划版本与任务版本不同返回409，无法核对时不选择药品。自动规律证据读取仍等B既有申请完成，不从模型猜证据。
+
+### C2 事务与JSON约定
+
+C2使用A0 Auth、read_unit/write_unit。ASR/chat/TTS及媒体字节读取均在Session外；写前重新验证实际会话、老人访问、关联通知、档案/记忆版本。所有成功结果与业务/动作/记忆在同一写UoW保存幂等结果，失败不缓存。Agent响应和动作JSON保留exclude_unset=True，避免patch默认null破坏回放。
+
+固定语音只覆盖真实对应文本，含新增“您好”；其他新文本TTS明确501，Agent可保留文字并标tts_unavailable。没有无内容音频、假播放回执或伪造服药。尚不能把固定mock的可用性宣称为任意文本真实TTS。

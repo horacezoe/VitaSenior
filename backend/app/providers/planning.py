@@ -30,6 +30,7 @@ class Snapshot:
     tasks: tuple[DailyTask, ...] = ()
     medication_slots: dict[str, str] = field(default_factory=dict)
     pending_action_ids: tuple[str, ...] = ()
+    proposal_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,8 @@ class Plan:
     actions: tuple[PlannedAction, ...] = ()
     preference: str | None = None
     decision_action_id: str | None = None
+    transcript: str | None = None
+    asr_provider: str = "not_used"
 
 
 class UnderstandingProvider(Protocol):

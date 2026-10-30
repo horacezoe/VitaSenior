@@ -126,9 +126,27 @@ class MockUnderstanding:
                           action("update_profile", body.model_dump(mode="json", exclude_unset=True),
                                  {"target_id": profile.elder_id, "update": body.model_dump(mode="json", exclude_unset=True)}))
         if fixture == "reject_change":
-            # notification_id is not a proposal_id. A0 must resolve the real
-            # association and provide ChangePort.decide before this tool can run.
+            if snapshot.proposal_id:
+                return result("reminder_response", "将通过真实提案服务拒绝这次修改。",
+                              action("decide_change", {"proposal_id": snapshot.proposal_id, "decision": "reject"},
+                                     {"proposal_id": snapshot.proposal_id, "decision": "reject"}, confirm=False))
             return result("reminder_response", "拒绝修改需要关联的真实提案；请使用提案的明确拒绝入口。")
+        if fixture is None and text in {"拒绝修改", "取消修改", "接受修改"}:
+            if not snapshot.proposal_id:
+                return result("clarify", "请先选择这次修改对应的真实通知。")
+            decision = "accept" if text == "接受修改" else "reject"
+            return result("reminder_response", "将通过真实提案服务处理您的决定。",
+                          action("decide_change", {"proposal_id": snapshot.proposal_id, "decision": decision},
+                                 {"proposal_id": snapshot.proposal_id, "decision": decision}, confirm=False))
+        if fixture is None and text in {"稍后", "等会", "稍后再提醒", "处理好了"}:
+            if not request.context.notification_id:
+                return result("clarify", "请先选择要处理的提醒。")
+            event = {"event_id": new_id("event"), "event_type": "handled" if text == "处理好了" else "snoozed"}
+            if event["event_type"] == "snoozed":
+                event["snooze_minutes"] = 10
+            return result("reminder_response", "将更新这条提醒的处理状态，播放本身不会记录服药。",
+                          action("respond_notification", {"notification_id": request.context.notification_id, **event},
+                                 {"notification_id": request.context.notification_id, "event": event}, confirm=False))
         preference = None
         if fixture == "explicit_preference":
             preference = "喜欢清淡饮食（演示偏好）"

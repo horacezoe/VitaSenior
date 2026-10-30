@@ -10,7 +10,8 @@ try {
     $samples = @(
         @{fixture_id='exercise_walk'; file='exercise_input.wav'; text='我散步了20分钟。'},
         @{fixture_id='exercise_reply'; file='exercise_reply.wav'; text='【模拟】要记下这次散步20分钟吗？'},
-        @{fixture_id='preference_reply'; file='preference_reply.wav'; text='【模拟】我会记住这条明确表达的偏好。'}
+        @{fixture_id='preference_reply'; file='preference_reply.wav'; text='【模拟】我会记住这条明确表达的偏好。'},
+        @{fixture_id='greeting'; file='greeting.wav'; text='您好'}
     )
     foreach ($sample in $samples) {
         $voice.SetOutputToWaveFile((Join-Path $outputDirectory $sample.file))

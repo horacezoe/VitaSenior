@@ -19,5 +19,12 @@
     "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content",
     "file": "preference_reply.wav",
     "fixture_id": "preference_reply"
+  },
+  {
+    "fixture_id": "greeting",
+    "file": "greeting.wav",
+    "text": "您好",
+    "sha256": "7092f60a49a5815c5876713dec427bc237aff924967912e10476f33aff56ea0a",
+    "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content"
   }
 ]
