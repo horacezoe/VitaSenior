@@ -14,7 +14,7 @@ from app.contracts.ports import AccessPort, MediaPort, MemoryPort
 from app.core.auth import require_elder_access
 from app.core.clock import Clock, HK, UTC, local_date
 from app.core.errors import AppError, unimplemented
-from app.models.health import Checkin as CheckinRow, DailyTask as TaskRow, MedicationPlan as PlanRow, Notification
+from app.models.health import Checkin as CheckinRow, DailyTask as TaskRow, MedicationPlan as PlanRow, Notification, DailyGoalBatch, NotificationEvent
 from app.models.identity import ElderProfile, User
 from app.schemas.common import Page, SourceRef
 from app.schemas.health import (
@@ -68,9 +68,33 @@ def live_records(tx, elder_id, day):
     ).order_by(CheckinRow.occurred_at, CheckinRow.id)))
 
 
-def task_rows(tx, elder_id, day):
-    return list(tx.scalars(select(TaskRow).where(TaskRow.elder_id == elder_id,
-        TaskRow.local_date == day).order_by(TaskRow.category, TaskRow.slot_key)))
+def task_rows(tx, elder_id, day, *, include_cancelled=False):
+    query = select(TaskRow).where(TaskRow.elder_id == elder_id, TaskRow.local_date == day)
+    if not include_cancelled:
+        query = query.where(TaskRow.cancelled_at.is_(None))
+    return list(tx.scalars(query.order_by(TaskRow.category, TaskRow.slot_key)))
+
+
+def mutable_task(tx, task, now):
+    future = task.local_date > local_date(now) or (task.local_date == local_date(now)
+        and (task.waiting_for_meal or (task.due_at is not None and task.due_at > now)))
+    return bool(future and not tx.scalar(select(CheckinRow.id).where(CheckinRow.task_id == task.id))
+        and not tx.scalar(select(Notification.id).where(Notification.related_task_id == task.id,
+            Notification.delivery_state != "pending")))
+
+
+def retire_task(tx, task, now):
+    task.cancelled_at = now
+    for notice in tx.scalars(select(Notification).where(Notification.related_task_id == task.id,
+            Notification.delivery_state == "pending", Notification.task_state.in_(["open", "snoozed"]))):
+        notice.task_state = "dismissed"
+
+
+def known_goal_days(tx, elder_id, now):
+    return {local_date(now), *tx.scalars(select(DailyGoalBatch.local_date).where(
+        DailyGoalBatch.elder_id == elder_id, DailyGoalBatch.local_date >= local_date(now))),
+        *tx.scalars(select(TaskRow.local_date).where(TaskRow.elder_id == elder_id,
+            TaskRow.local_date >= local_date(now)))}
 
 
 def refresh_after_meal(tx, elder_id, day):
@@ -96,20 +120,36 @@ def refresh_after_meal(tx, elder_id, day):
     tx.flush()
 
 
-def materialize_tasks(tx, elder_id, day, now):
-    existing = {(r.category, r.slot_key): r for r in task_rows(tx, elder_id, day)}
+def materialize_tasks(tx, elder_id, day, now, *, refresh_categories=()):
+    existing = {(r.category, r.slot_key): r for r in task_rows(tx, elder_id, day, include_cancelled=True)}
     if day < local_date(now):
-        return list(existing.values())
+        return [r for r in existing.values() if r.cancelled_at is None]
+    generated = set(tx.scalars(select(DailyGoalBatch.category).where(
+        DailyGoalBatch.elder_id == elder_id, DailyGoalBatch.local_date == day)))
+    categories = (set(_PAYLOADS) - generated) | set(refresh_categories)
     settings = settings_for(tx, elder_id)
     meals = {r.slot_key: r for r in live_records(tx, elder_id, day) if r.type == "diet"}
 
     def add(category, slot_key, title, due_at=None, **kwargs):
-        if (category, slot_key) not in existing:
+        if category not in categories:
+            return
+        row = existing.get((category, slot_key))
+        if row is None:
             row = TaskRow(elder_id=elder_id, local_date=day, category=category,
                 slot_key=slot_key, title=title, due_at=due_at,
                 source_key=f"task:{elder_id}:{day}:{category}:{slot_key}", **kwargs)
             tx.add(row)
             existing[category, slot_key] = row
+        elif row.cancelled_at is not None and mutable_task(tx, row, now):
+            row.cancelled_at, row.title, row.due_at = None, title, due_at
+            for name, value in kwargs.items():
+                setattr(row, name, value)
+            for notice in tx.scalars(select(Notification).where(Notification.related_task_id == row.id,
+                    Notification.delivery_state == "pending")):
+                if not tx.scalar(select(NotificationEvent.id).where(NotificationEvent.notification_id == notice.id)):
+                    notice.task_state, notice.title = "open", title
+                    if due_at:
+                        notice.due_at = due_at
     for meal in settings.meals:
         if meal.enabled:
             add("diet", meal.slot.value, f"记录{meal.slot.value}", at_local(day, meal.local_time))
@@ -132,6 +172,8 @@ def materialize_tasks(tx, elder_id, day, now):
             add("medication", f'{plan.id}:{slot["slot_id"]}', plan.name, due,
                 plan_id=plan.id, plan_version=plan.version, plan_snapshot=snapshot,
                 dose_display=plan.dose_display, waiting_for_meal=due is None)
+    for category in set(_PAYLOADS) - generated:
+        tx.add(DailyGoalBatch(elder_id=elder_id, local_date=day, category=category, generated_at=now))
     tx.flush()
     refresh_after_meal(tx, elder_id, day)
     return task_rows(tx, elder_id, day)
@@ -148,7 +190,7 @@ def task_dto(task, records):
         slot_key=task.slot_key, plan_id=task.plan_id, plan_version=task.plan_version,
         title=task.title, dose_display=task.dose_display, due_at=task.due_at,
         waiting_for_meal=task.waiting_for_meal, completion=completion,
-        checkin_ids=[r.id for r in related])
+        checkin_ids=[r.id for r in related], cancelled=task.cancelled_at is not None)
 
 
 def sync_task_notices(tx, elder_id, day):
@@ -253,6 +295,9 @@ class CheckinService:
                 payload = MedicationPayload(plan_id=plan.id, slot_id=slot["slot_id"],
                     intake_status=item["intake_status"], notes="演示历史记录").model_dump(mode="json")
                 add_record("medication", payload, task, task.due_at, task.slot_key)
+            for category in _PAYLOADS:
+                if tx.get(DailyGoalBatch, (elder_id, day, category)) is None:
+                    tx.add(DailyGoalBatch(elder_id=elder_id, local_date=day, category=category, generated_at=now))
         tx.flush()
 
     def list(self, tx, actor, elder_id, day, category=None, limit=20, cursor=None):
@@ -297,7 +342,8 @@ class CheckinService:
         day = local_date(value.occurred_at)
         old_day = row.local_date if row else day
         task = tx.get(TaskRow, value.task_id) if value.task_id else None
-        if value.task_id and (task is None or task.elder_id != elder_id or task.category != value.type or task.local_date != day):
+        if value.task_id and (task is None or task.elder_id != elder_id or task.category != value.type
+                or task.local_date != day or task.cancelled_at is not None):
             invalid("Task, elder, date and record type must match")
         if value.type == "medication":
             plan = tx.get(PlanRow, value.payload.plan_id)

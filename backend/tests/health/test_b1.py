@@ -276,15 +276,17 @@ def test_access_and_cursor_isolation(health):
         transact(h, h.checkins.list, DAY, cursor="foreign")
 
 
-def test_retiring_future_task_fails_without_partial_plan_write(health):
+def test_retiring_future_task_preserves_row_and_removes_goal(health):
     h = health
     p = plan(h)
-    with pytest.raises(AppError) as exc:
-        transact(h, h.medication.apply_change, "deactivate", p.plan_id, None, 1)
-    assert exc.value.status == 501
+    task = med_task(h)
+    result = transact(h, h.medication.apply_change, "deactivate", p.plan_id, None, 1)
+    assert result.active is False and result.version == 2
     with h.factory() as tx:
         row = tx.get(MedicationPlan, p.plan_id)
-        assert row.active and row.version == 1
+        assert row.active is False and row.version == 2
+        assert tx.get(DailyTask, task.task_id).cancelled_at == h.clock.now()
+    assert transact(h, h.reports.daily, DAY).completion.progress.medication.expected == 0
 
 
 def test_hk_day_and_future_record_rejection(health):
@@ -319,13 +321,15 @@ def test_schedule_change_cannot_backdate_existing_future_task(health):
 def test_future_settings_retirement_is_explicit_and_atomic(health):
     h = health
     transact(h, h.checkins.tasks, DAY + timedelta(days=1))
-    with pytest.raises(AppError) as exc:
-        transact(h, h.medication.update_settings, 1,
-            SettingsPatch(exercise={"enabled": False, "local_time": "17:00"}))
-    assert exc.value.status == 501
+    transact(h, h.medication.update_settings, 1,
+        SettingsPatch(exercise={"enabled": False, "local_time": "17:00"}))
     with h.factory() as tx:
-        assert tx.get(ElderProfile, h.elder).version == 1
-        assert tx.get(MemoryDocument, h.elder) is None
+        assert tx.get(ElderProfile, h.elder).version == 2
+        future = tx.scalar(select(DailyTask).where(DailyTask.local_date == DAY + timedelta(days=1), DailyTask.category == "exercise"))
+        assert future.cancelled_at is not None
+        assert tx.get(MemoryDocument, h.elder) is not None
+    assert transact(h, h.reports.daily, DAY).completion.progress.exercise.expected == 1
+    assert transact(h, h.reports.daily, DAY + timedelta(days=1)).completion.progress.exercise.expected == 0
 
 
 @pytest.mark.parametrize("kind", ["plan", "checkin", "report", "presence"])

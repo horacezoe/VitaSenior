@@ -1,0 +1,34 @@
+﻿[
+    {
+        "is_mock":  true,
+        "text":  "【模拟】记得记录今天的餐食，有需要时告诉我。",
+        "sha256":  "60665c0320537799e812914f74cf80a3fae47711c12dbbf64cc8e2bd7444b0cc",
+        "template_id":  "diet",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop, fixed spoken text",
+        "file":  "diet.wav"
+    },
+    {
+        "is_mock":  true,
+        "text":  "【模拟】今天活动了吗？可以告诉我您的运动记录。",
+        "sha256":  "ffd55b7f08fcda3f981ad2593bd3d597593c305c964d08cc977b1f8ff5cb5313",
+        "template_id":  "exercise",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop, fixed spoken text",
+        "file":  "exercise.wav"
+    },
+    {
+        "is_mock":  true,
+        "text":  "【模拟】请核对既定用药任务，服用后请明确确认。",
+        "sha256":  "e4a97b4a51ddb9228aea26b59faf67cd75d9d39e116dcfab5569e66a9e38d03c",
+        "template_id":  "medication",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop, fixed spoken text",
+        "file":  "medication.wav"
+    },
+    {
+        "is_mock":  true,
+        "text":  "【模拟】家人惦记着您，有需要时请告诉我们。",
+        "sha256":  "485eb94c65ae29e20f8e341b7796bf7b55b3d19bdd824348e656c65d5308f825",
+        "template_id":  "general",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop, fixed spoken text",
+        "file":  "general.wav"
+    }
+]

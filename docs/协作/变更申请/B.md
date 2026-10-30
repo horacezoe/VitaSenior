@@ -1,5 +1,19 @@
 # B 公共适配申请
 
+## 当前待 A/C（合入 integration/f1@51dc555 后，本节覆盖旧申请）
+
+此前 ports、clock/composition、Task/History绑定、C2启用、cancelled_at/DailyGoalBatch、录音所有权均已落地。B已完成剩余路由与模型适配，实际默认组装验收后开启16项health能力；A此前指出的7项全部开启。旧申请作为追溯保留，不再以那些已解决事项阻塞。
+
+1. **A：提案提示音不能触发自动生效窗口。** `app/fixtures/announcement.py` 的0.8秒双音不包含修改内容；`CHANGE01` 当前把它登记成通知音频。B不能把播放提示音当作“完整播报提案”。因此暂不登记NOTI03（其service/普通回执已实测），避免通过该入口启动窗口。请A/C准备与本次提案内容一致的真实中文语音，并冻结可信的内容/播放完成校验约定；未能播报时保留pending_notice及明确接受/拒绝。B不在写事务调用TTS，也不伪造完成。
+2. **A：设置提案绕过B入口，未来目标未更新。** 真实HTTP回归见 `backend/tests/health/test_shared_settings_gap.py`，明确strict xfail，不算通过：先生成明日运动目标(expected=1) → 子女提案关闭运动 → 老人明确accept返回applied、settings.enabled=false → 明日报表expected仍为1。`ChangeService._apply` settings分支当前直接写JSON；请在同tx调用已冻结 `medication.update_settings(tx, actor, elder_id, base_version, SettingsPatch(...))`，让版本/来源失效/未来任务停用一起完成。不要重复bump版本或复制B的目标逻辑。修复后strict xfail会XPASS失败，由B移除标记并复验。
+3. **A：超时应用仍构造老人Actor。** `_principal_for_timeout` 只是对原 `_system_actor` 改名，仍未给B/C提供明确系统授权入口。请统一冻结系统变更/来源失效的授权方式，B继续只调用ChangePort.apply_due(tx,now)。
+4. **A：联调脚本药物时刻/选择条件。** 当前 `integration_smoke.round_two` 在12:00HK创建当天08:00新计划；B按“新计划不补造过去义务”不生成这个过期任务，故REC02显示PENDING。请改成未来时刻/餐后任务，并按新建plan_id选择对应task，避免选到其他计划同名slot；NOTI03前还需发送NOTI01 visible心跳。B的默认组装回归已验证未来13:00任务→明确taken→唯一记录→日报completed=1。
+5. **A/C：Agent来源标记。** CheckinPort仍没有可信来源参数，C确认动作产生的真实记录source只能是user。请A冻结内部来源传递，C固定传agent_confirmed，B复用该参数保存；不增加客户端可自行宣称来源的字段。
+
+当前B自维护的文件均在原白名单；共享定义未直接编辑。NOTI04已支持本人录音优先、四个与文字一致的真实中文演示WAV、未知文字明确audio_asset_id=null。SAPI只用于离线生成素材；所有音频准备/受控素材读取在写事务外。
+
+---
+
 基线：`f1-reviewed-v1` → `1034c7698de4394b3e7695a3a820df2dcfeaf28b`。2026-10-31。
 
 1. **未来任务停用**：DailyTask 没有 active/cancelled 状态。删除未来 slot、停用计划或缩短日期范围时，已有任务可能已有通知/FK；不能删除历史，也不能在 plan_snapshot 偷放状态。请 A 定义持久化停用字段及 DTO/统计约定。适配前 B 对需要撤销已生成任务的修改明确返回 501，事务回滚，不伪造成功。

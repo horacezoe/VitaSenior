@@ -14,15 +14,19 @@ from app.models.health import MedicationPlan as PlanRow, DailyTask, Checkin, Not
 from app.models.identity import ElderProfile
 from app.schemas.common import SourceRef
 from app.schemas.health import MedicationPlanWrite, MedicationPlan, PlanList, PlanPatch, SettingsPatch, ReminderSettings
-from app.services.health_service import authorize, at_local, conflict, invalid, materialize_tasks, settings_for, live_records, clock_now
+from app.services.health_service import (authorize, at_local, conflict, invalid, materialize_tasks,
+    settings_for, live_records, clock_now, mutable_task, retire_task, known_goal_days)
 from datetime import timedelta
 
 
 def plan_dto(row):
-    return MedicationPlan(plan_id=row.id, elder_id=row.elder_id, name=row.name,
-        dose_display=row.dose_display, schedule=row.schedule, start_date=row.start_date,
-        end_date=row.end_date, medicine_asset_id=row.medicine_asset_id, notes=row.notes,
-        active=row.active, version=row.version, updated_at=row.updated_at)
+    try:
+        return MedicationPlan(plan_id=row.id, elder_id=row.elder_id, name=row.name,
+            dose_display=row.dose_display, schedule=row.schedule, start_date=row.start_date,
+            end_date=row.end_date, medicine_asset_id=row.medicine_asset_id, notes=row.notes,
+            active=row.active, version=row.version, updated_at=row.updated_at)
+    except ValidationError as exc:
+        raise AppError(422, "VALIDATION_ERROR", "Stored medication plan is invalid; review its schedule") from exc
 
 
 class MedicationService:
@@ -68,7 +72,9 @@ class MedicationService:
             if expected_version != row.version or not row.active:
                 conflict("Plan version changed or plan is inactive")
             if operation == "update" and isinstance(patch, PlanPatch):
-                data = plan_dto(row).model_dump(include=set(MedicationPlanWrite.model_fields))
+                # Validate the merged write, so a valid schedule patch can repair
+                # legacy malformed data without accepting an invalid response.
+                data = {name: getattr(row, name) for name in MedicationPlanWrite.model_fields}
                 data.update(patch.model_dump(exclude_unset=True))
                 try:
                     candidate = MedicationPlanWrite.model_validate(data)
@@ -86,17 +92,13 @@ class MedicationService:
         changes = []
         if operation != "create":
             for task in tx.scalars(select(DailyTask).where(DailyTask.plan_id == row.id)):
-                recorded = tx.scalar(select(Checkin.id).where(Checkin.task_id == task.id))
-                delivered = tx.scalar(select(Notification.id).where(
-                    Notification.related_task_id == task.id, Notification.delivery_state != "pending"))
-                future = task.local_date > local_date(now) or (task.local_date == local_date(now)
-                    and (task.waiting_for_meal or (task.due_at and task.due_at > now)))
-                if not future or recorded or delivered:
+                if task.cancelled_at is not None or not mutable_task(tx, task, now):
                     continue
                 slot = next((s for s in candidate.schedule.slots if task.slot_key == f"{row.id}:{s.slot_id}"), None) if candidate else None
                 applicable = candidate and candidate.start_date <= task.local_date and (candidate.end_date is None or candidate.end_date >= task.local_date)
                 if slot is None or not applicable:
-                    unimplemented()  # needs A's task retirement model; see B.md
+                    retire_task(tx, task, now)
+                    continue
                 if task.local_date == local_date(now):
                     new_due = at_local(task.local_date, slot.local_time) if candidate.schedule.mode == "fixed" else None
                     if candidate.schedule.mode == "after_meal":
@@ -128,7 +130,8 @@ class MedicationService:
                 notice.title = task.title
                 if task.due_at:
                     notice.due_at = task.due_at
-        materialize_tasks(tx, elder_id, local_date(now), now)
+        for day in known_goal_days(tx, elder_id, now):
+            materialize_tasks(tx, elder_id, day, now, refresh_categories={"medication"})
         tx.flush()
         return plan_dto(row)
 
@@ -141,27 +144,35 @@ class MedicationService:
         row = tx.get(ElderProfile, elder_id)
         if row.version != expected_version:
             conflict("Profile/settings version changed")
-        materialize_tasks(tx, elder_id, local_date(clock_now(self.clock)), clock_now(self.clock))
+        now = clock_now(self.clock)
+        materialize_tasks(tx, elder_id, local_date(now), now)
         current = settings_for(tx, elder_id).model_dump(exclude={"version"})
         current.update(patch.model_dump(exclude_unset=True, mode="json"))
         result = ReminderSettings.model_validate({**current, "version": row.version + 1})
         for task in tx.scalars(select(DailyTask).where(DailyTask.elder_id == elder_id,
-                DailyTask.local_date > local_date(clock_now(self.clock)), DailyTask.category != "medication")):
+                DailyTask.local_date > local_date(now), DailyTask.category != "medication",
+                DailyTask.cancelled_at.is_(None))):
+            if not mutable_task(tx, task, now):
+                continue
             if task.category == "diet":
                 target = next((m for m in result.meals if m.slot == task.slot_key and m.enabled), None)
             else:
                 target = result.exercise if result.exercise.enabled else None
             if target is None:
-                unimplemented()  # future goal retirement needs A's persistent state
+                retire_task(tx, task, now)
+                continue
             task.due_at = at_local(task.local_date, target.local_time)
             for notice in tx.scalars(select(Notification).where(Notification.related_task_id == task.id,
                     Notification.delivery_state == "pending")):
                 notice.due_at = task.due_at
         row.reminder_settings_json = result.model_dump(mode="json", exclude={"version"})
         row.version += 1
-        row.updated_at = clock_now(self.clock)
+        row.updated_at = now
         if self.memory is None:
             unimplemented()
         self.memory.on_source_changed(tx, actor, elder_id, SourceRef(type="profile", id=elder_id, version=row.version))
+        for day in known_goal_days(tx, elder_id, now):
+            if day > local_date(now):
+                materialize_tasks(tx, elder_id, day, now, refresh_categories={"diet", "exercise"})
         tx.flush()
         return result

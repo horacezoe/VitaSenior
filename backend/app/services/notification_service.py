@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+import json
+from pathlib import Path
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -15,12 +17,8 @@ from app.schemas.identity import EventResult
 from app.services.health_service import authorize, invalid, materialize_tasks, live_records, task_dto, settings_for, at_local, clock_now
 
 
-TEMPLATES = {
-    "diet": "记得记录今天的餐食，有需要时告诉我。",
-    "exercise": "今天活动了吗？可以告诉我您的运动记录。",
-    "medication": "请核对既定用药任务，服用后请明确确认。",
-    "general": "家人惦记着您，有需要时请告诉我们。",
-}
+TEMPLATES = {key: value["text"] for key, value in json.loads(
+    (Path(__file__).resolve().parents[2] / "fixtures" / "health" / "templates.json").read_text(encoding="utf-8")).items()}
 
 
 def notice_dto(row):
@@ -75,7 +73,8 @@ class NotificationService:
             query = query.where(NoticeRow.task_state == task_state)
         rows = list(tx.scalars(query.order_by(NoticeRow.due_at, NoticeRow.id)))
         rows = [r for r in rows if not (r.delivery_state == "pending" and r.related_task_id
-                and tx.get(DailyTask, r.related_task_id).waiting_for_meal)]
+                and (tx.get(DailyTask, r.related_task_id).waiting_for_meal
+                     or tx.get(DailyTask, r.related_task_id).cancelled_at is not None))]
         if cursor:
             indexes = [i for i, row in enumerate(rows) if row.id == cursor]
             if not indexes:
@@ -109,7 +108,7 @@ class NotificationService:
             return notice_dto(old)
         if payload.related_task_id:
             task = tx.get(DailyTask, payload.related_task_id)
-            if task is None or task.elder_id != payload.elder_id:
+            if task is None or task.elder_id != payload.elder_id or task.cancelled_at is not None:
                 invalid("Reminder task does not belong to this elder")
             if payload.category != "general" and task.category != payload.category:
                 invalid("Reminder category does not match task")
@@ -133,7 +132,8 @@ class NotificationService:
         if payload.audio_asset_id:
             if self.media is None:
                 unimplemented()
-            asset = self.media.get_asset(tx, actor, payload.audio_asset_id)
+            asset = (self.media.assert_owned_voice(tx, actor, payload.audio_asset_id)
+                     if payload.kind == "family_voice" else self.media.get_asset(tx, actor, payload.audio_asset_id))
             if not asset.mime_type.startswith("audio/") or asset.size_bytes == 0:
                 invalid("Reminder audio must be a nonempty audio asset")
         if payload.proposal_id:
@@ -169,8 +169,10 @@ class NotificationService:
                 raise AppError(409, "APP_NOT_VISIBLE", "A current visible heartbeat is required")
             if row.due_at > now or (row.snoozed_until and row.snoozed_until > now):
                 transition_error("Reminder is not due")
-            if row.related_task_id and tx.get(DailyTask, row.related_task_id).waiting_for_meal:
-                transition_error("The related task is still waiting for a meal")
+            if row.related_task_id:
+                task = tx.get(DailyTask, row.related_task_id)
+                if task.waiting_for_meal or task.cancelled_at is not None:
+                    transition_error("The related task is waiting for a meal or cancelled")
             if row.task_state not in {"open", "snoozed"}:
                 transition_error("Reminder is already handled or dismissed")
             if kind == "displayed":

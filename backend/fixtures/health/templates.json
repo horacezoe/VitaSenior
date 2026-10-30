@@ -1,0 +1,6 @@
+{
+  "diet": {"text": "【模拟】记得记录今天的餐食，有需要时告诉我。", "file": "diet.wav"},
+  "exercise": {"text": "【模拟】今天活动了吗？可以告诉我您的运动记录。", "file": "exercise.wav"},
+  "medication": {"text": "【模拟】请核对既定用药任务，服用后请明确确认。", "file": "medication.wav"},
+  "general": {"text": "【模拟】家人惦记着您，有需要时请告诉我们。", "file": "general.wav"}
+}

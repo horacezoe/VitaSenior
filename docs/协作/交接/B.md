@@ -1,5 +1,22 @@
 # B 健康域交接
 
+## 最新进展（本节覆盖下方此前交接）
+
+已正常快进合入 `integration/f1@51dc555`（A/C真实组装与共享ports/模型）。剩余health路由已接齐，B已按默认组装真实HTTP验证开启16项能力：PLAN01–03、SET01–02、TASK01、REC01–04、DASH01、CAL01、REPORT01、NOTI01/02/04。A此前提到的7项pending接口均已开启；health_capabilities不再为空。
+
+NOTI03的service、幂等与普通录音回执已实测，暂不启用公开能力：A的提案音频仍是提示音，没有播报修改内容，不能启动60秒窗口。剩余准确依赖见 [变更申请/B.md](../变更申请/B.md) 顶部。现有完整播放窗口服务集成测试从明确的已持久化提案/音频fixture开始，不替代真实提案内容播报。
+
+- 适配cancelled_at与DailyGoalBatch：保留已发生/有记录/已送达快照；撤销/重加尚未发生的未来目标复用行；空类别生成也落批次，不用新设置回写旧日期。
+- 亲情提醒通过A媒体port验证本人录音，并将受控字节分享给目标家庭；否则采用B白名单fixtures/health内四个固定中文演示语音。精确文本与SHA-256可复核，绝不使用提示音替代内容。未知文字保留文字/audio=null。所有音频准备在写事务外。
+- 更新服务对不合法旧计划返回422；允许合法schedule patch修复旧数据，不放宽schema。原公共fixture空slots曾触发500，已用业务校验处理，公共测试未改。
+- 最新本域命令：`python -m pytest tests/health -q --tb=short -rx --basetemp=.pytest_cache/b-verified-routing` → **85 passed / 1 xfailed**。xfail是上述A设置提案未来目标不同步的已复现问题，不算通过。
+- 契约和架构检查通过，hash仍为A发布的 `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。
+- `integration_smoke --strict` 当前 **34 OK / 4 PENDING / 0 FAIL，退出1**：3个NOTI03待A真实播报，另1个为脚本中午创建08:00计划的过去任务问题，详见申请。不将严格联调声明为通过。
+
+下一步合入刚发布的C修正 `1e31bb6`（包括用药任务ID持久化）并复跑全量；完整P0仍待共享事项解决，P1推送未启动。
+
+---
+
 日期：2026-10-31。**B 域服务及已冻结 port 的 flow 已交付；生产 P0 全链路尚未完成，health 能力仍为 false。** 不能把替身验证或单个状态机通过当成三轮集成验收通过。剩余公共依赖已有具体申请，见 [变更申请/B.md](../变更申请/B.md)。
 
 ## 1. 分支、基线与提交

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.contracts.context import Actor
 from app.contracts.ports import AccessPort, MemoryPort
 from app.core.clock import Clock, local_date
+from app.core.errors import AppError
 from app.models.identity import ElderProfile, FamilyBinding
 from app.schemas.health import AttentionItem, Calendar, CalendarDay, DailyReport, Progress, ProgressCount, Records
 from app.schemas.identity import Dashboard, ElderSummary, RiskAssessment
@@ -64,6 +65,8 @@ class ReportService:
     def calendar(self, tx, actor, elder_id, month):
         authorize(tx, actor, elder_id, access=self.access)
         year, number = map(int, month.split("-"))
+        if year < 1:
+            raise AppError(422, "VALIDATION_ERROR", "Calendar year must be at least 0001")
         days = [self._compute(tx, elder_id, date(year, number, n))[0]
             for n in range(1, calendar.monthrange(year, number)[1] + 1)]
         return Calendar(month=month, days=days)
@@ -78,9 +81,10 @@ class ReportService:
         age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
         binding = tx.scalar(select(FamilyBinding).where(FamilyBinding.elder_id == elder_id,
             FamilyBinding.child_user_id == actor.user_id, FamilyBinding.status == "active"))
+        memory = self.memory.context(tx, actor, elder_id) if self.memory else None
         return Dashboard(elder=ElderSummary(elder_id=elder_id, display_name=profile["display_name"],
             age=age, conditions=profile.get("conditions", []), binding_id=binding.id if binding else None,
             relationship=binding.relationship if binding else None), date=day, completion=completion,
             today_records=records, pending_tasks=[t for t in tasks if t.completion != "completed"],
-            attention_items=attention, recommendations=[], memory_summary="", provider_mode="mock",
+            attention_items=attention, recommendations=[], memory_summary=memory.markdown if memory and memory.entries else "", provider_mode="mock",
             risk_assessment=RiskAssessment())
