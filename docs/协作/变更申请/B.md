@@ -21,9 +21,11 @@ B 分支会保持可合并提交；可用 `git fetch origin backend/health` 获�
 
 ## 合入 A1/A2（72d7610）后的实际验证与请求
 
-正常 merge 提交 `998ec83`；两个 B 文件的冲突已保留业务实现，并补齐 A2 的 get_plan/mark_proposal_handled/bind。本域48项已通过；增加真实 A 建档→B计划/历史导入 HTTP 测试也通过（测试显式 composition）。
+正常 merge 提交 `998ec83`；两个 B 文件的冲突已保留业务实现，并补齐 A2 的 get_plan/mark_proposal_handled/bind。最新代码 `9cfe39b` 本域57项已通过，包含真实 A 建档→B计划/历史导入、已有提案的回执→A窗口/拒绝/重启结算（显式测试 composition）。未注入 Clock 的服务明确501，不自行回退 SystemClock。
 
 10. **公共能力一致性实际失败**：`python -m pytest tests -q --tb=short --basetemp=.pytest_cache/b-integrated` → **1 failed / 153 passed / 42 deselected**。失败是 `tests/framework/test_all_routes.py::test_every_p0_route_matches_its_capability[CHANGE04]`：B 的 mark_proposal_handled 已真实实现，使拒绝返回200；A仍登记CHANGE04=false，公共断言要求501。B没有改该公共测试，也没有把正常钩子改回桩。建议 A 对未验收入口统一能力门禁，或接齐依赖后实测并登记。B 的 perform 已在权限核对后按 capability 与同一 Clock 门禁。
+
+    最新全量复验（`--basetemp=.pytest_cache/b-delivery-final`）为 **1 failed / 165 passed / 42 deselected**；同一项失败，未放宽断言。其余最新验证与未完成项以交接/B.md为准。
 11. **A2 接真实 DTO 的代码审查问题**：ChangeService.create 使用 `notification.id`，但 Notification DTO 的真实字段是 `notification_id`（A测试替身有id，未覆盖此差异）。需要 A 修正；B不为通过测试给 DTO 偷加别名。另 `_apply` 的 medication 分支无论 operation 都 get_plan(target_id)：create 的 target_id=None，deactivate 传 EmptyPatch 而 MedicationPort 冻结为None；请 A 分支按冻结契约处理。
 12. **A2 系统入口与鉴权**：ChangeService._system_actor 当前构造老人 Actor 供扫描使用，未满足任务单“系统任务不伪造用户Actor”；mark_played 自身也未核对 actor/elder。B只通过 apply_due(tx,now) 调 A，不在 B复制这些状态机。请 A提供明确内部授权应用入口并复核 mark_played 权限。
 13. **A2 通知音频**：create 只传文字、不传audio；B禁止无音频的playback_completed，因此实际60秒窗口尚无法由前端完整走通。请 A/C冻结事务外 TTS或预制演示音频准备流程。B不在写锁内调用TTS、不把无音频的完成当成完整播报。
