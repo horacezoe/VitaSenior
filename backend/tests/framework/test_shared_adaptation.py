@@ -21,7 +21,8 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     assert declared_capabilities() <= mounted
     assert set(capabilities(mounted)) == mounted
     assert capabilities(mounted)['SYS01'] is True
-    assert capabilities(mounted)['CHANGE01'] is False
+    # CHANGE04 is the long-lived "still gated" probe: applying needs C's MemoryPort.
+    assert capabilities(mounted)['CHANGE04'] is False
 
 def test_services_receive_the_application_clock_and_settings(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))

@@ -21,7 +21,9 @@ CASES = [
     ('CHANGE01', 'post', '/elders/{elder}/change-proposals', {'target_type': 'profile', 'target_id': '{elder}', 'operation': 'update', 'base_version': 1, 'patch': {'medical_notes': 'note'}}, 'bound_child'),
     ('CHANGE02', 'get', '/elders/{elder}/change-proposals', None, 'bound_child'),
     ('CHANGE03', 'get', '/change-proposals/proposal', None, 'elder'),
-    ('CHANGE04', 'post', '/change-proposals/proposal/decision', {'decision': 'reject'}, 'elder'),
+    # accept exercises the whole apply path (target write + C memory invalidation),
+    # so an undeclared CHANGE04 must still answer 501; reject only closes the notice.
+    ('CHANGE04', 'post', '/change-proposals/proposal/decision', {'decision': 'accept'}, 'elder'),
     ('PLAN01', 'get', '/elders/{elder}/medication-plans', None, 'bound_child'),
     ('PLAN02', 'post', '/elders/{elder}/medication-plans', {'name': 'demo', 'dose_display': 'provided', 'schedule': {'mode': 'fixed', 'slots': [{'slot_id': 'morning', 'local_time': '08:00'}]}, 'start_date': '2026-10-30'}, 'elder'),
     ('PLAN03', 'put', '/medication-plans/plan', {'expected_version': 1, 'patch': {'notes': 'note'}}, 'elder'),
