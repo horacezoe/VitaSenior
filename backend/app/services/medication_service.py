@@ -29,6 +29,16 @@ class MedicationService:
                  media: MediaPort | None = None, memory: MemoryPort | None = None):
         self.clock, self.access, self.media, self.memory = clock or SystemClock(), access, media, memory
 
+    def get_plan(self, tx: Session, actor: Actor, plan_id: str) -> MedicationPlan:
+        row = tx.get(PlanRow, plan_id) if plan_id else None
+        if row is None:
+            raise AppError(404, "NOT_FOUND", "Plan unavailable")
+        try:
+            authorize(tx, actor, row.elder_id, access=self.access)
+        except AppError as exc:
+            raise AppError(404, "NOT_FOUND", "Plan unavailable") from exc
+        return plan_dto(row)
+
     def list(self, tx, actor, elder_id, active=None):
         authorize(tx, actor, elder_id, access=self.access)
         query = select(PlanRow).where(PlanRow.elder_id == elder_id).order_by(PlanRow.id)

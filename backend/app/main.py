@@ -11,6 +11,8 @@ from app.core.db import build_engine, create_tables, sessions
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.core.idempotency import Idempotency
+from app.core.ratelimit import RateLimiter
+from app.core.uow import UnitOfWork
 from app.composition import compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
@@ -39,14 +41,26 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
             engine.dispose()
     app = FastAPI(title="VitaSenior", version="0.1.0", lifespan=lifespan)
     app.state.settings, app.state.clock = settings, clock
-    app.state.services = services or compose(clock, settings)
+    app.state.ratelimit = RateLimiter(clock)
+    app.state.services = services or compose(clock, settings, app.state.ratelimit)
     # The only place capability/provider declarations are read; routers/system.py
     # just renders them so the three developers never edit one shared list.
     app.state.capabilities_declared = declared_capabilities()
     app.state.providers = providers()
     app.state.identity = compose_identity(clock)
     app.state.idempotency = Idempotency(clock)
-    app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval)
+    def settle_due_proposals(now):
+        """Server-side settlement of expired proposal windows. Due state lives in
+        SQLite, so a restart resumes from auto_apply_at with no in-process timer."""
+        try:
+            with UnitOfWork(app.state.sessions) as uow:
+                app.state.services.changes.apply_due(uow.session, now)
+                uow.commit()
+        except Exception:
+            # Never mark anything applied on failure; the next tick retries.
+            log.exception("due-proposal settlement failed; retrying next tick")
+    app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval,
+                                tick_hook=settle_due_proposals)
     def meta(request):
         return Meta(request_id=getattr(request.state, "request_id", new_id("req")), server_time=clock.now())
     def respond(request, data):
@@ -56,7 +70,8 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
         body = ErrorEnvelope(error=ErrorDetail(code=code, message=message, details=details or {}, retryable=retryable), meta=meta(request))
         headers = {"X-Request-ID": body.meta.request_id}
         if status == 429:
-            headers["Retry-After"] = "300"
+            retry_after = (details or {}).get("retry_after_seconds", 300)
+            headers["Retry-After"] = str(int(retry_after))
         return JSONResponse(status_code=status, content=body.model_dump(mode="json"), headers=headers)
     @app.middleware("http")
     async def request_id(request, call_next):

@@ -40,6 +40,20 @@ class NotificationService:
                  media: MediaPort | None = None, changes: ChangePort | None = None):
         self.clock, self.access, self.media, self.changes = clock or SystemClock(), access, media, changes
 
+    def bind(self, *, changes=None) -> "NotificationService":
+        """Preserve A2's late-binding seam; only composition calls this."""
+        if changes is not None:
+            self.changes = changes
+        return self
+
+    def mark_proposal_handled(self, tx: Session, notification_id: str) -> None:
+        """Trusted A2 system hook; no actor forgery or proposal state machine."""
+        row = tx.get(NoticeRow, notification_id)
+        if row is None or row.proposal_id is None:
+            raise AppError(404, "NOT_FOUND", "Proposal notification unavailable")
+        row.task_state = "handled"
+        tx.flush()
+
     def presence(self, tx, actor, elder_id, body: PresenceWrite):
         authorize(tx, actor, elder_id, "self", self.access)
         now = self.clock.now()
