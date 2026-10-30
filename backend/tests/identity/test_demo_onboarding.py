@@ -69,7 +69,7 @@ def test_onb01_match_never_touches_the_confirmed_profile(demo):
     assert fresh.json()['data']['medication_plan_drafts'] == []
 
 def test_onb02_confirms_and_imports_plans_once(demo, fakes):
-    medication, history = fakes
+    medication, history = fakes.medication, fakes.history
     matched = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/match',
                                json={'sample_identity_key': 'community_sample_001'}, headers=hdr(demo.elder, 'match-1')).json()['data']
     body = {'draft_id': matched['draft_id'],
@@ -81,12 +81,12 @@ def test_onb02_confirms_and_imports_plans_once(demo, fakes):
     profile = confirmed.json()['data']
     assert profile['onboarding_status'] == 'confirmed' and profile['version'] == 2
     assert profile['source'] == 'user_confirmed' and profile['display_name'] == '陈阿姨'
-    assert [c['plans'] for c in medication.calls] == [['演示药品A']]
+    assert [c['plans'] for c in medication.imports] == [['演示药品A']]
     assert history.calls == [{'elder_id': demo.elder_id, 'demo_id': demo.experience['demo_id'], 'days': 14}]
     # The draft is consumed: a second confirm cannot re-import the same plans.
     again = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/confirm', json=body, headers=hdr(demo.elder, 'confirm-2'))
     assert again.status_code in (404, 409), again.text
-    assert len(medication.calls) == 1
+    assert len(medication.imports) == 1
 
 def test_onb02_rejects_a_stale_expected_version(demo, fakes):
     matched = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/match',

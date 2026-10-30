@@ -32,17 +32,23 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
     """Build the bundle. clock/settings default only for isolated unit tests; the
     application always passes its own (app.state.clock / app.state.settings)."""
     clock, settings = clock or SystemClock(), settings or Settings()
+    # A<->B notification/change reference cycle is broken by late binding below;
+    # only this function wires services, business code never looks them up.
+    memory = MemoryService()
+    medication = MedicationService()
     changes = ChangeService(clock, settings)
+    notifications = NotificationService(clock, changes=changes)
+    changes.bind(medication=medication, notifications=notifications, memory=memory)
     return ServiceBundle(
         access=AccessService(),
         binding=BindingService(clock, limiter),
         profile=ProfileService(clock, settings),
         changes=changes,
-        medication=MedicationService(),
+        medication=medication,
         checkins=CheckinService(),
-        notifications=NotificationService(),
+        notifications=notifications,
         reports=ReportService(),
-        memory=MemoryService(),
+        memory=memory,
         media=MediaService(clock, settings),
         tasks=TaskService(),
         history=HistoryService(),

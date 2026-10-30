@@ -6,7 +6,6 @@ from app.schemas.enums import ProposalStatus
 from app.routers.dependencies import Context, Public, access, resource_access, role
 from app.schemas.identity import BindingCode, BindingPreview, BindingPreviewWrite, BindingResult, BindingWrite, ChangeDecision, ChangeProposal, ChangeProposalWrite, ConfirmWrite, DemoExperience, DemoWrite, ElderList, MatchResult, MatchWrite, MediaAsset, Profile, ProfileUpdate
 from app.application import identity_flows as flows
-from app.application.identity_flows import unavailable
 
 router = APIRouter()
 
@@ -98,19 +97,25 @@ def media03(ctx: Public, asset_id: str, ticket: str | None = None):
 @router.post("/elders/{elder_id}/change-proposals", operation_id="CHANGE01", response_model=Envelope[ChangeProposal], status_code=201)
 def change01(ctx: Context, elder_id: str, body: ChangeProposalWrite, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
     access(ctx, elder_id, "child")
-    unavailable(ctx.request.app.state.services)
+    data = flows.create_change(ctx, elder_id, body, idempotency_key)
+    ctx.uow.commit()
+    return ctx.request.app.state.respond(ctx.request, data)
 
 @router.get("/elders/{elder_id}/change-proposals", operation_id="CHANGE02", response_model=Envelope[Page[ChangeProposal]], status_code=200)
 def change02(ctx: Context, elder_id: str, status: ProposalStatus | None = None, limit: Annotated[int, Query(ge=1, le=100)] = 20, cursor: str | None = None):
     access(ctx, elder_id)
-    unavailable(ctx.request.app.state.services)
+    data = flows.list_changes(ctx, elder_id, status, limit, cursor)
+    return ctx.request.app.state.respond(ctx.request, data)
 
 @router.get("/change-proposals/{proposal_id}", operation_id="CHANGE03", response_model=Envelope[ChangeProposal], status_code=200)
 def change03(ctx: Context, proposal_id: str):
     resource_access(ctx, "proposal", proposal_id)
-    unavailable(ctx.request.app.state.services)
+    data = flows.read_change(ctx, proposal_id)
+    return ctx.request.app.state.respond(ctx.request, data)
 
 @router.post("/change-proposals/{proposal_id}/decision", operation_id="CHANGE04", response_model=Envelope[ChangeProposal], status_code=200)
 def change04(ctx: Context, proposal_id: str, body: ChangeDecision, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
     resource_access(ctx, "proposal", proposal_id, "self")
-    unavailable(ctx.request.app.state.services)
+    data = flows.decide_change(ctx, proposal_id, body, idempotency_key)
+    ctx.uow.commit()
+    return ctx.request.app.state.respond(ctx.request, data)

@@ -25,6 +25,14 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
    Authorization 头，若契约仍写“必须 Bearer”，前端会按契约误判。安全行为未放宽：无凭据仍 401，
    无效/过期/篡改票据一律 404，Bearer 分支仍做归属与绑定校验。
    快照已重新导出：`6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d`。
+8. **`change_proposals` 新增 `created_at` 列（A2）**。
+   影响：只加一列，不增删表、不改约束；`create_all` 不会给既有库补列，**旧的运行库需重建或手工
+   ALTER**（测试/演示库均为新建）。
+   原因：提案列表分页需要稳定且可排序的创建时间，原模型只有 notified_at/applied_at，无法排序。
+   业务写入统一使用注入的 `Clock`，不依赖数据库默认值。
+9. **`NotificationPort` 增加 `mark_proposal_handled`，`MedicationPort` 增加 `get_plan`（A2）**。
+   影响：均为 B 需实现的新桩，当前仍抛 501；A 不读 B 的表。
+   原因：A2 应用提案时必须关闭关联通知、并在应用前复核用药计划版本与生成 `before_snapshot`。
 
 ## 待确认（暂未改公共定义）
 

@@ -86,6 +86,8 @@ class ChangeProposal(Base):
     applied_by: Mapped[str | None] = mapped_column(String)
     conflict_reason: Mapped[str | None] = mapped_column(String)
     reason: Mapped[str] = mapped_column(default="")
+    # A2 gap fix: proposals need a stable creation order for cursor pagination.
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     __table_args__ = (CheckConstraint("status IN ('pending_notice','awaiting_decision','applied','rejected','cancelled','conflicted')"), CheckConstraint("target_type IN ('profile','reminder_settings','medication_plan')"), CheckConstraint("operation IN ('create','update','deactivate')"), CheckConstraint("status != 'pending_notice' OR auto_apply_at IS NULL"))
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"

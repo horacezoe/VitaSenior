@@ -10,7 +10,7 @@ from app.contracts.bundle import ServiceBundle
 from app.contracts.context import Actor
 from app.contracts.media import MediaContent
 from app.core.auth import authenticate
-from app.core.errors import unimplemented
+from app.core.errors import AppError, unimplemented
 from app.core.idempotency import StoredResult
 from app.seed import import_demo_history
 
@@ -130,3 +130,32 @@ def media_content(ctx, asset_id: str, ticket: str | None) -> MediaContent:
     if ticket is None:
         actor = authenticate(ctx.tx, _bearer_token(ctx), _state(ctx).clock)
     return _state(ctx).services.media.open_content(ctx.tx, actor, asset_id, ticket=ticket)
+
+# ---- CHANGE01-04 ------------------------------------------------------------
+
+def create_change(ctx, elder_id: str, body, key: str) -> dict:
+    state = _state(ctx)
+    def operation():
+        return state.services.changes.create(ctx.tx, ctx.actor, elder_id, body, state.clock.now()).model_dump(mode="json")
+    return _idempotent(ctx, key=key, status_code=201,
+                       body={"elder_id": elder_id, **body.model_dump(mode="json")}, operation=operation)
+
+def list_changes(ctx, elder_id: str, status, limit: int, cursor: str | None):
+    return _state(ctx).services.changes.query(ctx.tx, ctx.actor, elder_id, status, limit, cursor)
+
+def read_change(ctx, proposal_id: str):
+    return _state(ctx).services.changes.read(ctx.tx, ctx.actor, proposal_id)
+
+def decide_change(ctx, proposal_id: str, body, key: str) -> dict:
+    state = _state(ctx)
+    def operation():
+        return state.services.changes.decide(ctx.tx, ctx.actor, proposal_id, body, state.clock.now()).model_dump(mode="json")
+    try:
+        return _idempotent(ctx, key=key, status_code=200,
+                           body={"proposal_id": proposal_id, **body.model_dump(mode="json")}, operation=operation)
+    except AppError as exc:
+        if exc.code == "CHANGE_ALREADY_APPLIED":
+            # The deadline settlement happened in this tx just before the refusal;
+            # commit it so "too late" cannot roll the applied change back.
+            ctx.tx.commit()
+        raise

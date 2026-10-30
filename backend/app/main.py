@@ -12,6 +12,7 @@ from app.core.errors import AppError
 from app.core.ids import new_id
 from app.core.idempotency import Idempotency
 from app.core.ratelimit import RateLimiter
+from app.core.uow import UnitOfWork
 from app.composition import compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
@@ -48,7 +49,18 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
     app.state.providers = providers()
     app.state.identity = compose_identity(clock)
     app.state.idempotency = Idempotency(clock)
-    app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval)
+    def settle_due_proposals(now):
+        """Server-side settlement of expired proposal windows. Due state lives in
+        SQLite, so a restart resumes from auto_apply_at with no in-process timer."""
+        try:
+            with UnitOfWork(app.state.sessions) as uow:
+                app.state.services.changes.apply_due(uow.session, now)
+                uow.commit()
+        except Exception:
+            # Never mark anything applied on failure; the next tick retries.
+            log.exception("due-proposal settlement failed; retrying next tick")
+    app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval,
+                                tick_hook=settle_due_proposals)
     def meta(request):
         return Meta(request_id=getattr(request.state, "request_id", new_id("req")), server_time=clock.now())
     def respond(request, data):
