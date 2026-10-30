@@ -35,7 +35,8 @@ A2 的状态机、新增 port、`change_proposals.created_at` 均为内部或存
 | --- | --- | --- |
 | A0 共享适配 | `10d51af` | `f1-shared-v1`（一次性，不移动） |
 | A1 家庭档案与媒体 | `ec80d4c` | — |
-| A2 代维护提案 | 见 `backend/platform` HEAD（本文件所在提交） | — |
+| A2 代维护提案 | `f7e750a` | — |
+| 联调脚本与合并验证 | 见 `backend/platform` HEAD（本文件所在提交） | — |
 
 B/C 合入方式：`git fetch origin --tags && git merge f1-shared-v1`（或 rebase 到该标签），
 保留自己的提交，不 reset、不覆盖别人的工作。
@@ -239,12 +240,46 @@ import_demo_history(tx, services, actor, elder_id, demo_id=demo_id, scenario="di
 未运行：真实模型/ASR/TTS、手机 HTTPS、Web Push、业务 AC01–AC14 的跨三人端到端验收、
 真实多进程限流（当前是单进程内存限流）、旧数据库的手工迁移。
 
-## 11. 缺口与下一步
+## 11. 联调脚本与 C 分支的合并验证
+
+### 11.1 一键三轮验收
+
+`python -m app.tools.integration_smoke`（临时库、进程内；`--base-url` 可打真实服务，
+`--strict` 把 PENDING 也算失败，用来做合并闸门）。三态如实报告：`OK` / `PENDING`（真实 501）/
+`FAIL`（契约或数据不一致）。PENDING 绝不计为成功，脚本只用自己的临时 DATA_DIR。
+
+当前在 `backend/platform` 上的结果：**19 ok / 9 pending / 0 failed**。pending 的 9 步正是
+B/C 的端口缺口：ONB02（B 计划导入 + 历史）、AGENT01（C 的 HTTP 层）、PLAN02/TASK01/REC02/
+CHANGE01（B 的计划、任务、打卡、通知入队）、REC01/REPORT01/MEM01（B 的查询与 C 的记忆路由）。
+两条隔离断言已经 OK：另一个 DEMO01 家庭的子女读他人档案/看板均 403。
+
+### 11.2 C 分支（`backend/agent`，7d8bfea）的合并结论
+
+- C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/
+  composition/seed/OpenAPI/框架测试），合并面干净。
+- 在临时 worktree 实测把 `f1-shared-v1` 合入 `origin/backend/agent`：**零冲突**，
+  合并后全量 `pytest tests -q` → **115 passed, 42 deselected**（A 的 109 + C 的 6）。
+- C 已实现 `MemoryService.on_source_changed(...)`，与 A2 提案应用路径的签名一致。
+- 唯一需要 A 侧接线的点：C 的 `MemoryService(clock=None, access=None)` 要求注入同一个 Clock 与
+  AccessPort。合入后把 `composition.compose` 的两行改成
+
+  ```python
+  access = AccessService()
+  memory = MemoryService(clock, access)
+  ```
+
+  否则记忆服务会在测试里退回 `SystemClock`。A0 现在写的是无参 `MemoryService()`，因为 A 分支上的
+  桩还不接受参数；这条等 C 合入时一并改，属于一次性集成编辑。
+- C 的 `agent_capabilities.py` 在其分支上不存在（该文件由 A0 新增）。C 合入 A0 后需在
+  `app/services/agent_capabilities.py` 登记自己已验收的 operation 与真实 `PROVIDERS`，
+  `/runtime` 才会如实显示。
+
+## 12. 缺口与下一步
 
 1. **B**：`MedicationPort.import_draft/get_plan/apply_change`、`HistoryPort.import_demo_history`、
    `NotificationPort.enqueue/handle_event/mark_proposal_handled` 仍需落地；它们就绪后 A 把
    CHANGE01/CHANGE04 登记为 true 并复跑 `tests/identity`。
-2. **C**：`ChangePort.decide` 供 `decide_change` 动作；`MediaPort.register_generated` 供 TTS；
-   `MemoryPort.on_source_changed` 供提案生效后失效归纳。
+2. **C**：合入 `f1-shared-v1`（已验证零冲突），补齐 `AgentService` 的 composition 接线与 HTTP 层；
+   `ChangePort.decide` 供 `decide_change` 动作，`MediaPort.register_generated` 供 TTS。
 3. ONB02 的“匹配样本 + 有用药计划”路径依赖 B 的计划导入；当前真实运行返回 501 并回滚，
    有专门测试证明不会假成功。
