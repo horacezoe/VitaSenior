@@ -8,20 +8,20 @@ from sqlalchemy.orm import Session
 
 from app.contracts.context import Actor
 from app.contracts.ports import AccessPort, MemoryPort
-from app.core.clock import Clock, SystemClock, local_date
+from app.core.clock import Clock, local_date
 from app.models.identity import ElderProfile, FamilyBinding
 from app.schemas.health import AttentionItem, Calendar, CalendarDay, DailyReport, Progress, ProgressCount, Records
 from app.schemas.identity import Dashboard, ElderSummary, RiskAssessment
-from app.services.health_service import authorize, checkin_dto, live_records, materialize_tasks, task_dto
+from app.services.health_service import authorize, checkin_dto, live_records, materialize_tasks, task_dto, clock_now
 
 
 class ReportService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
                  memory: MemoryPort | None = None):
-        self.clock, self.access, self.memory = clock or SystemClock(), access, memory
+        self.clock, self.access, self.memory = clock, access, memory
 
     def _compute(self, tx, elder_id, day):
-        now = self.clock.now()
+        now = clock_now(self.clock)
         tasks = materialize_tasks(tx, elder_id, day, now)
         rows = live_records(tx, elder_id, day)
         views = [task_dto(t, rows) for t in tasks]
@@ -59,7 +59,7 @@ class ReportService:
         p = completion.progress
         text = f"饮食记录 {p.diet.completed}/{p.diet.expected}，运动记录 {p.exercise.completed}/{p.exercise.expected}，明确确认服药 {p.medication.completed}/{p.medication.expected}。未记录不等于实际未完成。"
         return DailyReport(elder_id=elder_id, date=day, completion=completion, records=records,
-            summary_text=text, attention_items=attention, updated_at=self.clock.now())
+            summary_text=text, attention_items=attention, updated_at=clock_now(self.clock))
 
     def calendar(self, tx, actor, elder_id, month):
         authorize(tx, actor, elder_id, access=self.access)
@@ -70,11 +70,11 @@ class ReportService:
 
     def dashboard(self, tx, actor, elder_id, day=None):
         authorize(tx, actor, elder_id, access=self.access)
-        day = day or local_date(self.clock.now())
+        day = day or local_date(clock_now(self.clock))
         completion, records, attention, tasks = self._compute(tx, elder_id, day)
         profile = tx.get(ElderProfile, elder_id).profile_json
         birth = date.fromisoformat(profile["birth_date"]) if profile.get("birth_date") else None
-        today = local_date(self.clock.now())
+        today = local_date(clock_now(self.clock))
         age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
         binding = tx.scalar(select(FamilyBinding).where(FamilyBinding.elder_id == elder_id,
             FamilyBinding.child_user_id == actor.user_id, FamilyBinding.status == "active"))

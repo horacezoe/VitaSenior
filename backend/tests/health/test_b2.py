@@ -283,3 +283,32 @@ def test_system_scanner_calls_change_port_and_rolls_back_on_failure(notices):
     with h.factory() as tx:
         rows = list(tx.scalars(select(Notification)))
         assert rows and all(n.delivery_state == "pending" and n.push_state == "unsupported" for n in rows)
+
+
+@pytest.mark.parametrize("displayed", [False, True])
+def test_corrected_after_meal_notice_reuses_delivery_without_new_call(notices, displayed):
+    h, service, _ = notices
+    plan(h, "after_meal")
+    t = med_task(h)
+    h.clock.advance(seconds=4 * 3600)
+    record = transact(h, h.checkins.create_or_update, meal(h))
+    h.clock.advance(seconds=1800)
+    with UnitOfWork(h.factory) as uow:
+        notice = next(n for n in service.scan(uow.session, h.clock.now()) if n.related_task_id == t.task_id)
+        uow.commit()
+    if displayed:
+        heartbeat(h, service)
+        event(h, service, notice, "displayed")
+    transact(h, h.checkins.cancel, record.checkin_id, 1)
+    if not displayed:
+        assert not any(n.notification_id == notice.notification_id for n in transact(h, service.query).items)
+        heartbeat(h, service)
+        with pytest.raises(AppError):
+            event(h, service, notice, "displayed")
+    transact(h, h.checkins.create_or_update, meal(h))
+    h.clock.advance(seconds=1800)
+    with UnitOfWork(h.factory) as uow:
+        repeated = next(n for n in service.scan(uow.session, h.clock.now()) if n.related_task_id == t.task_id)
+        assert repeated.notification_id == notice.notification_id
+        assert repeated.delivery_state == ("displayed" if displayed else "pending")
+        uow.commit()

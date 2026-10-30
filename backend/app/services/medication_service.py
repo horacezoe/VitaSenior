@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.contracts.context import Actor
 from app.contracts.ports import AccessPort, MediaPort, MemoryPort
-from app.core.clock import Clock, SystemClock, local_date
+from app.core.clock import Clock, local_date
 from app.core.errors import AppError, unimplemented
 from app.models.health import MedicationPlan as PlanRow, DailyTask, Checkin, Notification
 from app.models.identity import ElderProfile
 from app.schemas.common import SourceRef
 from app.schemas.health import MedicationPlanWrite, MedicationPlan, PlanList, PlanPatch, SettingsPatch, ReminderSettings
-from app.services.health_service import authorize, at_local, conflict, invalid, materialize_tasks, settings_for, live_records
+from app.services.health_service import authorize, at_local, conflict, invalid, materialize_tasks, settings_for, live_records, clock_now
 from datetime import timedelta
 
 
@@ -28,7 +28,7 @@ def plan_dto(row):
 class MedicationService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
                  media: MediaPort | None = None, memory: MemoryPort | None = None):
-        self.clock, self.access, self.media, self.memory = clock or SystemClock(), access, media, memory
+        self.clock, self.access, self.media, self.memory = clock, access, media, memory
 
     def get_plan(self, tx: Session, actor: Actor, plan_id: str) -> MedicationPlan:
         row = tx.get(PlanRow, plan_id) if plan_id else None
@@ -56,7 +56,7 @@ class MedicationService:
                      operation: Literal["create", "update", "deactivate"], target_id: str | None,
                      patch: MedicationPlanWrite | PlanPatch | None, expected_version: int | None) -> MedicationPlan:
         authorize(tx, actor, elder_id, "proposal", self.access)
-        now = self.clock.now()
+        now = clock_now(self.clock)
         if operation == "create":
             if target_id is not None or expected_version is not None or not isinstance(patch, MedicationPlanWrite):
                 invalid("Create requires a complete plan and no target/version")
@@ -141,12 +141,12 @@ class MedicationService:
         row = tx.get(ElderProfile, elder_id)
         if row.version != expected_version:
             conflict("Profile/settings version changed")
-        materialize_tasks(tx, elder_id, local_date(self.clock.now()), self.clock.now())
+        materialize_tasks(tx, elder_id, local_date(clock_now(self.clock)), clock_now(self.clock))
         current = settings_for(tx, elder_id).model_dump(exclude={"version"})
         current.update(patch.model_dump(exclude_unset=True, mode="json"))
         result = ReminderSettings.model_validate({**current, "version": row.version + 1})
         for task in tx.scalars(select(DailyTask).where(DailyTask.elder_id == elder_id,
-                DailyTask.local_date > local_date(self.clock.now()), DailyTask.category != "medication")):
+                DailyTask.local_date > local_date(clock_now(self.clock)), DailyTask.category != "medication")):
             if task.category == "diet":
                 target = next((m for m in result.meals if m.slot == task.slot_key and m.enabled), None)
             else:
@@ -159,7 +159,7 @@ class MedicationService:
                 notice.due_at = task.due_at
         row.reminder_settings_json = result.model_dump(mode="json", exclude={"version"})
         row.version += 1
-        row.updated_at = self.clock.now()
+        row.updated_at = clock_now(self.clock)
         if self.memory is None:
             unimplemented()
         self.memory.on_source_changed(tx, actor, elder_id, SourceRef(type="profile", id=elder_id, version=row.version))

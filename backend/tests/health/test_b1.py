@@ -13,6 +13,10 @@ from app.models.identity import ElderProfile
 from app.schemas.health import (CheckinUpdate, DietWrite, ExerciseWrite, MedicationWrite,
     MedicationPlanWrite, PlanPatch, SettingsPatch)
 from .helpers import transact
+from app.services.health_service import CheckinService
+from app.services.medication_service import MedicationService
+from app.services.report_service import ReportService
+from app.services.notification_service import NotificationService
 
 DAY = date(2026, 10, 30)
 
@@ -322,3 +326,23 @@ def test_future_settings_retirement_is_explicit_and_atomic(health):
     with h.factory() as tx:
         assert tx.get(ElderProfile, h.elder).version == 1
         assert tx.get(MemoryDocument, h.elder) is None
+
+
+@pytest.mark.parametrize("kind", ["plan", "checkin", "report", "presence"])
+def test_unwired_service_never_falls_back_to_real_time(health, kind):
+    h = health
+    with pytest.raises(AppError) as exc:
+        if kind == "plan":
+            transact(h, MedicationService().import_draft, [MedicationPlanWrite(name="药物", dose_display="既定用量",
+                start_date=DAY, schedule={"mode": "fixed", "slots": [{"slot_id": "one", "local_time": "09:00"}]})])
+        elif kind == "checkin":
+            transact(h, CheckinService().create_or_update, meal(h))
+        elif kind == "report":
+            transact(h, ReportService().daily, DAY)
+        else:
+            from app.schemas.health import PresenceWrite
+            transact(h, NotificationService().presence, PresenceWrite(client_id="one", visible=True))
+    assert exc.value.status == 501
+    with h.factory() as tx:
+        assert tx.scalar(select(func.count()).select_from(Checkin)) == 0
+        assert tx.scalar(select(func.count()).select_from(MedicationPlan)) == 0

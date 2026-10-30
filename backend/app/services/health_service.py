@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.contracts.context import Actor
 from app.contracts.ports import AccessPort, MediaPort, MemoryPort
 from app.core.auth import require_elder_access
-from app.core.clock import Clock, HK, UTC, SystemClock, local_date
+from app.core.clock import Clock, HK, UTC, local_date
 from app.core.errors import AppError, unimplemented
 from app.models.health import Checkin as CheckinRow, DailyTask as TaskRow, MedicationPlan as PlanRow, Notification
 from app.models.identity import ElderProfile, User
@@ -29,6 +29,12 @@ _WRITE = TypeAdapter(CheckinWrite)
 def authorize(tx, actor, elder_id, scope="read", access=None):
     check = access.require_elder_access if access else require_elder_access
     return check(tx, actor, elder_id, scope)
+
+
+def clock_now(clock: Clock | None):
+    if clock is None:
+        unimplemented()
+    return clock.now()
 
 
 def invalid(message):
@@ -160,11 +166,11 @@ def sync_task_notices(tx, elder_id, day):
 class CheckinService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
                  memory: MemoryPort | None = None, media: MediaPort | None = None):
-        self.clock, self.access, self.memory, self.media = clock or SystemClock(), access, memory, media
+        self.clock, self.access, self.memory, self.media = clock, access, memory, media
 
     def tasks(self, tx: Session, actor: Actor, elder_id: str, day: date) -> TaskList:
         authorize(tx, actor, elder_id, access=self.access)
-        rows = materialize_tasks(tx, elder_id, day, self.clock.now())
+        rows = materialize_tasks(tx, elder_id, day, clock_now(self.clock))
         records = live_records(tx, elder_id, day)
         return TaskList(date=day, items=[task_dto(t, records) for t in rows])
 
@@ -188,7 +194,7 @@ class CheckinService:
         if tx.scalar(select(TaskRow.id).where(TaskRow.source_key == marker)):
             return
         plans = list(tx.scalars(select(PlanRow).where(PlanRow.elder_id == elder_id).order_by(PlanRow.id)))
-        now = self.clock.now()
+        now = clock_now(self.clock)
         marker_saved = False
         for template in history_template()[-days:]:
             day = local_date(now) + timedelta(days=template["day_offset"])
@@ -286,7 +292,7 @@ class CheckinService:
             if checkin_id:
                 invalid("Use CheckinUpdate to correct a record")
             value = payload
-        if value.occurred_at > self.clock.now():
+        if value.occurred_at > clock_now(self.clock):
             invalid("A checkin cannot occur in the future")
         day = local_date(value.occurred_at)
         old_day = row.local_date if row else day
@@ -316,7 +322,7 @@ class CheckinService:
                 if self.media is None:
                     unimplemented()
                 self.media.get_asset(tx, actor, asset)
-        materialize_tasks(tx, elder_id, day, self.clock.now())
+        materialize_tasks(tx, elder_id, day, clock_now(self.clock))
         if task is None and value.type in {"diet", "exercise"}:
             key = value.payload.meal_slot if value.type == "diet" else "daily"
             task = next((t for t in task_rows(tx, elder_id, day)
@@ -327,12 +333,12 @@ class CheckinService:
             row.version += 1
         else:
             row = CheckinRow(elder_id=elder_id, type=value.type, version=1,
-                created_at=self.clock.now(), revisions_json=[])
+                created_at=clock_now(self.clock), revisions_json=[])
             tx.add(row)
         row.local_date, row.occurred_at = day, value.occurred_at
         row.payload_json = value.payload.model_dump(mode="json")
         row.slot_key = value.payload.meal_slot.value if value.type == "diet" else None
-        row.task_id, row.updated_at = task.id if task else None, self.clock.now()
+        row.task_id, row.updated_at = task.id if task else None, clock_now(self.clock)
         tx.flush()
         if row.version > 1:
             self._source_changed(tx, actor, row)
@@ -350,7 +356,7 @@ class CheckinService:
             conflict("Record changed or cancelled")
         row.revisions_json = [*row.revisions_json, checkin_dto(row).model_dump(mode="json")]
         row.version += 1
-        row.cancelled_at = row.updated_at = self.clock.now()
+        row.cancelled_at = row.updated_at = clock_now(self.clock)
         self._source_changed(tx, actor, row)
         tx.flush()
         refresh_after_meal(tx, elder_id, row.local_date)

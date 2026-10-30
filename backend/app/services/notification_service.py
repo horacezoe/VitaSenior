@@ -5,14 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.contracts.context import Actor
 from app.contracts.ports import AccessPort, ChangePort, MediaPort
-from app.core.clock import Clock, SystemClock, local_date
+from app.core.clock import Clock, local_date
 from app.core.errors import AppError, unimplemented
 from app.models.health import Notification as NoticeRow, NotificationEvent as EventRow, Presence as PresenceRow, DailyTask
 from app.models.identity import ElderProfile
 from app.schemas.common import Page
 from app.schemas.health import NotificationEnqueue, Notification, NotificationEvent, Presence, PresenceWrite
 from app.schemas.identity import EventResult
-from app.services.health_service import authorize, invalid, materialize_tasks, live_records, task_dto, settings_for, at_local
+from app.services.health_service import authorize, invalid, materialize_tasks, live_records, task_dto, settings_for, at_local, clock_now
 
 
 TEMPLATES = {
@@ -38,7 +38,7 @@ def transition_error(message):
 class NotificationService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
                  media: MediaPort | None = None, changes: ChangePort | None = None):
-        self.clock, self.access, self.media, self.changes = clock or SystemClock(), access, media, changes
+        self.clock, self.access, self.media, self.changes = clock, access, media, changes
 
     def bind(self, *, changes=None) -> "NotificationService":
         """Preserve A2's late-binding seam; only composition calls this."""
@@ -56,7 +56,7 @@ class NotificationService:
 
     def presence(self, tx, actor, elder_id, body: PresenceWrite):
         authorize(tx, actor, elder_id, "self", self.access)
-        now = self.clock.now()
+        now = clock_now(self.clock)
         row = tx.get(PresenceRow, (elder_id, body.client_id))
         if body.visible:
             if row is None:
