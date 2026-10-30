@@ -7,7 +7,6 @@ import pytest
 from app.contracts.context import Actor
 from app.core.clock import FakeClock
 from app.core.db import build_engine, create_tables, sessions
-from app.core.uow import UnitOfWork
 from app.models.agent import MemoryDocument
 from app.schemas.enums import Role
 from app.seed import framework_seed
@@ -52,8 +51,3 @@ def health(tmp_path):
     engine.dispose()
 
 
-def transact(env, function, *args, **kwargs):
-    with UnitOfWork(env.factory) as uow:
-        result = function(uow.session, env.actor, env.elder, *args, **kwargs)
-        uow.commit()
-        return result

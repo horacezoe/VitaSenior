@@ -12,7 +12,7 @@ from app.models.health import Checkin, DailyTask, MedicationPlan
 from app.models.identity import ElderProfile
 from app.schemas.health import (CheckinUpdate, DietWrite, ExerciseWrite, MedicationWrite,
     MedicationPlanWrite, PlanPatch, SettingsPatch)
-from conftest import transact
+from .helpers import transact
 
 DAY = date(2026, 10, 30)
 

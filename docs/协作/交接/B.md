@@ -29,3 +29,14 @@ report = services.reports.daily(tx, actor, elder_id, hk_day)
 ```
 
 依赖缺口见 `docs/协作/变更申请/B.md`。首次 fetch 无 A0；第二次 fetch 已看到 f1-shared-v1，下一步保留 B1 提交后正常 merge、读取实际签名并继续适配与 B2。
+
+## B2 服务与已冻结端口的 HTTP 交付
+
+- B1 提交 `9299f2c`；A0 正常合入 `d616ef1`（以 git log 实际记录为准）；适配请求提交 `728825e` 已推至 `origin/backend/health`。
+- 已实现 NotificationService.enqueue/handle_event，以及本域 presence/query/scan；扫描通过明确系统入口选取当天目标，不创建 Actor，不请求 TTS/推送。Scanner 支持 factory/services/scan_hook，由集成人接线。
+- 回执逐次完整播放计数：每次完整播放发送一个新的 playback_completed.event_id；相同 ID 重放不累计。累计到 repeat_count 才置 played、同 tx 调 A mark_played。无素材、无可见心跳、未接听均不能启动窗口。该约定未增加 DTO 字段，需前端/A 确认；不声称真实设备播放已验收。
+- 已接存在的 typed ports 对应 PLAN02/03、TASK01、REC02/03、REPORT01、NOTI03 应用 flow；共享 Clock 未接时明确501。缺少 port 的其它 HTTP 尚为占位，所有 health 能力仍为 false。
+- 实际合跑：`python -m pytest tests/health tests/framework -q --basetemp=.pytest_cache/b-all-2` → **113 passed / 42 deselected / 1个既有警告**（health 43，framework 70）。HTTP 使用真实鉴权/SQLite/幂等，测试中显式注入本域服务及 MemoryPort 替身；非生产组装。
+- 仍未完成：生产 composition、缺失读/取消/设置 ports、任务停用/历史日期完成标记、亲情录音所有权与文字转音频、真实 A/C 全链路、P1 推送、手机回执。均未冒充通过。
+
+第三次 fetch 看到 A1/A2 已发布至 `origin/backend/platform`（72d7610）；下一步正常合入，按新增 get_plan/mark_proposal_handled 补实现并验证真实依赖。

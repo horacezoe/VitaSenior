@@ -104,6 +104,11 @@ class MedicationService:
                 "end_date": row.end_date.isoformat() if row.end_date else None}
             task.waiting_for_meal = row.schedule["mode"] == "after_meal"
             task.due_at = None if task.waiting_for_meal else at_local(task.local_date, slot.local_time)
+            for notice in tx.scalars(select(Notification).where(Notification.related_task_id == task.id,
+                    Notification.delivery_state == "pending")):
+                notice.title = task.title
+                if task.due_at:
+                    notice.due_at = task.due_at
         materialize_tasks(tx, elder_id, local_date(now), now)
         tx.flush()
         return plan_dto(row)

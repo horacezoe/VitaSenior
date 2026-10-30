@@ -85,8 +85,8 @@ def refresh_after_meal(tx, elder_id, day):
             if notice.delivery_state == "pending" and notice.task_state in {"open", "snoozed"}:
                 if task.due_at is not None:
                     notice.due_at = task.due_at
-                else:
-                    notice.task_state = "dismissed"
+                # With no meal, query/receipt gates suppress this pending call.
+                # Keep its task state so a later corrected meal can reuse it.
     tx.flush()
 
 
@@ -164,6 +164,10 @@ class CheckinService:
         rows = materialize_tasks(tx, elder_id, day, self.clock.now())
         records = live_records(tx, elder_id, day)
         return TaskList(date=day, items=[task_dto(t, records) for t in rows])
+
+    def today(self, tx: Session, actor: Actor, elder_id: str, day: date) -> TaskList:
+        """A0 TaskPort entry; composition can share this health-domain instance."""
+        return self.tasks(tx, actor, elder_id, day)
 
     def list(self, tx, actor, elder_id, day, category=None, limit=20, cursor=None):
         authorize(tx, actor, elder_id, access=self.access)

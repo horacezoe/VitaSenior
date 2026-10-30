@@ -1,0 +1,1 @@
+"""Health business acceptance suite."""
