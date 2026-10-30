@@ -11,6 +11,7 @@ from app.core.db import build_engine, create_tables, sessions
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.core.idempotency import Idempotency
+from app.core.ratelimit import RateLimiter
 from app.composition import compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
@@ -39,7 +40,8 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
             engine.dispose()
     app = FastAPI(title="VitaSenior", version="0.1.0", lifespan=lifespan)
     app.state.settings, app.state.clock = settings, clock
-    app.state.services = services or compose(clock, settings)
+    app.state.ratelimit = RateLimiter(clock)
+    app.state.services = services or compose(clock, settings, app.state.ratelimit)
     # The only place capability/provider declarations are read; routers/system.py
     # just renders them so the three developers never edit one shared list.
     app.state.capabilities_declared = declared_capabilities()
@@ -56,7 +58,8 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
         body = ErrorEnvelope(error=ErrorDetail(code=code, message=message, details=details or {}, retryable=retryable), meta=meta(request))
         headers = {"X-Request-ID": body.meta.request_id}
         if status == 429:
-            headers["Retry-After"] = "300"
+            retry_after = (details or {}).get("retry_after_seconds", 300)
+            headers["Retry-After"] = str(int(retry_after))
         return JSONResponse(status_code=status, content=body.model_dump(mode="json"), headers=headers)
     @app.middleware("http")
     async def request_id(request, call_next):

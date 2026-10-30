@@ -6,4 +6,7 @@ that endpoint must pass against a real database first (see docs/协作/交接/A.
 
 CAPABILITIES: frozenset[str] = frozenset({
     "SYS01", "SYS02", "AUTH01", "AUTH02", "AUTH04",
+    "DEMO01", "ONB01", "ONB02", "PROF01", "PROF02",
+    "BIND01", "BIND02", "BIND03", "BIND04",
+    "MEDIA01", "MEDIA02", "MEDIA03",
 })

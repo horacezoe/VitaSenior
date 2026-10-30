@@ -8,7 +8,7 @@ import argparse, ast, importlib.util
 from pathlib import Path
 
 DOMAINS = {
-    "identity_service": "identity", "access_service": "identity", "binding_service": "identity", "profile_service": "identity", "change_service": "identity", "media_service": "identity",
+    "identity_service": "identity", "access_service": "identity", "binding_service": "identity", "profile_service": "identity", "change_service": "identity", "media_service": "identity", "identity_views": "identity",
     "health_service": "health", "medication_service": "health", "notification_service": "health", "report_service": "health",
     "task_service": "health", "history_service": "health",
     "agent_service": "agent", "memory_service": "agent",

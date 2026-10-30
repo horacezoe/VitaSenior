@@ -19,7 +19,13 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
    影响：C 实现时用 `read_unit`/`write_unit` 两段式；对外契约未变。
 6. `pyproject.toml` 增加 `f0_stage` marker 与默认 `-m 'not f0_stage'`。
    影响：F0 阶段断言不再阻挡业务开发，但显式 `pytest -m f0_stage` 仍可复现 F0 基线。
+7. **MEDIA03 的 OpenAPI security 改为可选**：`[{HTTPBearer: []}]` → `[{HTTPBearer: []}, {}]`。
+   影响：只改 MEDIA03 一个 operation；其余 44 个 operation 及全部 schema 逐字节未变。
+   原因：任务单要求“MEDIA03 允许有效 ticket 单独授权，仍保留 Bearer”；`<audio src>` 无法附加
+   Authorization 头，若契约仍写“必须 Bearer”，前端会按契约误判。安全行为未放宽：无凭据仍 401，
+   无效/过期/篡改票据一律 404，Bearer 分支仍做归属与绑定校验。
+   快照已重新导出：`6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d`。
 
 ## 待确认（暂未改公共定义）
 
-暂无。若 A1/A2 需要新增公开字段（例如 MEDIA03 的票据授权在 OpenAPI 中的可选 security），会在实现时同步快照并在此记录差异。
+暂无。

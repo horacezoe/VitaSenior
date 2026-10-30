@@ -28,14 +28,14 @@ from app.contracts.bundle import ServiceBundle
 def compose_identity(clock: Clock) -> IdentityService:
     return IdentityService(clock)
 
-def compose(clock: Clock | None = None, settings: Settings | None = None) -> ServiceBundle:
+def compose(clock: Clock | None = None, settings: Settings | None = None, limiter=None) -> ServiceBundle:
     """Build the bundle. clock/settings default only for isolated unit tests; the
     application always passes its own (app.state.clock / app.state.settings)."""
     clock, settings = clock or SystemClock(), settings or Settings()
     changes = ChangeService(clock, settings)
     return ServiceBundle(
         access=AccessService(),
-        binding=BindingService(clock),
+        binding=BindingService(clock, limiter),
         profile=ProfileService(clock, settings),
         changes=changes,
         medication=MedicationService(),
