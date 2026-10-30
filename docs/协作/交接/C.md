@@ -1,4 +1,48 @@
-# C 当前交接：C2 实现已提交，等待 A 的公共装配
+# C 最新状态：实现已交付，整体集成尚未就绪
+
+2026-10-31（Asia/Shanghai）。状态：**C2_IMPLEMENTED_PENDING_SHARED_FIXES / INTEGRATION_NOT_READY**。
+
+当前已验证提交：`0e9101a84479e5b012d764cebe454e0854f18d0f`；C2主体代码提交 `8fe7174c3ed48ce514c2d21f0bdddec6728cf474`。分支 `backend/agent`。本节覆盖后面的阶段性历史结果。
+
+本轮继续正常合入了 A 发布的 `integration/f1` = `21f9bff`，合并提交 `38bc09cde04567128ee97c48c23fa1b73f9dc9b9`。因此当前已包含真实 B 的服务，不再沿用“B全部是桩”的结论。
+
+## 最新实际结果
+
+- `python -m pytest tests/agent -q`：**63 passed, 1 warning in 9.48s**。含45个C1原语与18个C2 HTTP计数。
+- `python -m pytest tests -q --tb=short`：**1 failed, 220 passed, 42 deselected, 1 warning in 41.47s**。不能宣称全量绿。
+- 唯一失败：`test_every_p0_route_matches_its_capability[CHANGE04]`；真实C来源失效可用后，A接受提案已返回200，但A能力仍为false，框架严格要求501。C保留公共测试与A能力文件，待A按真实状态修正登记/门禁。
+- `python -m app.tools.export_contract --check`：通过；hash为 `6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d`。
+- `python -m app.tools.check_architecture`：通过。
+- `python -m app.tools.integration_smoke`：**20 ok / 9 pending / 0 failed**，PENDING不是业务通过。
+
+测试均为临时SQLite、FakeClock、锁定依赖。唯一warning为原有Starlette/httpx弃用提示。C2 HTTP环境使用明确依赖注入；默认部署没有偷偷组装C服务或启用能力。
+
+## 新增真实跨域验证
+
+已用真实 A/B/C 服务完成：C mock运动规划→健康表仍零条→确认动作→B真实写入一条打卡→重复确认仍一条→B真实日报包含相同checkin_id，运动完成数为1。没有直接改B表代替写port。
+
+当前冻结B port没有Agent来源参数，实际返回的记录source仍为user。C未直接改表冒充agent_confirmed，该来源标记差异仍是A/B共享契约缺口，不能宣称该项业务验收已完成。缺失B的回滚测试已改成明确注入的测试替身；正常实际B服务不再被当占位。
+
+A在integration/f1已修复原notification.id/notification_id差异，此问题不再阻塞；C默认部署的7个HTTP入口仍因缺少A-owned装配而明确501/capability=false，等待接线。
+
+## A 的剩余操作
+
+用户明确要求公共文件由A修改。C的实际功能/测试修改只在白名单；共享变化均来自A已发布的正常merge。准确候选代码和最新失败已写入 `docs/协作/变更申请/C.md`：
+
+1. composition复用已有access/media/B实例，仅将现有MemoryService改为传同一个clock/access，并构造AgentService与三个mock provider。
+2. main连接app.state.agent/agent_chat/agent_asr/agent_tts。
+3. Runtime.providers允许mock，重导出并审核仅此枚举的OpenAPI变化。
+4. 同次集成启用C2_OPERATIONS及真实mock PROVIDERS；C已在申请中明确授权集成人一次性激活该C注册文件。
+5. 修正CHANGE04能力与实际接受路径的不一致，重新跑全量；不要放宽框架断言或让C记忆服务故意抛501。
+
+TaskPort/HistoryPort仍接A0占位实例，B对应原语已存在；其接线及其他健康能力仍由A/B处理。自动规律的当前证据读取、来源标记、手机/真实供应商和零PENDING三轮业务验收仍未完成。
+
+以下为此前C2/C1历史记录，保留签名与流程说明；以本节的最新测试和未就绪状态为准。
+
+---
+
+
+# C2 前一批历史交接：尚未合入 integration/f1
 
 日期：2026-10-31（Asia/Shanghai）。状态：**C2_IMPLEMENTED_PENDING_A_ASSEMBLY**。本批代码提交 `8fe7174c3ed48ce514c2d21f0bdddec6728cf474`；分支 `backend/agent`。本记录之后单独提交，不回填自身 commit。
 
