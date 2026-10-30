@@ -19,6 +19,9 @@ from app.routers import system, auth, identity, health, agent
 
 log = logging.getLogger("vitasenior")
 ERROR_RESPONSES = {s: {"model": ErrorEnvelope} for s in (401,403,404,409,413,415,422,429,500,501,502,504)}
+# Keep the public contract stable across Python HTTPStatus phrase changes.
+ERROR_RESPONSES[413]["description"] = "Content Too Large"
+ERROR_RESPONSES[422]["description"] = "Unprocessable Content"
 
 def create_app(settings: Settings | None = None, *, clock: Clock | None = None, services: ServiceBundle | None = None) -> FastAPI:
     settings, clock = settings or Settings(), clock or SystemClock()
