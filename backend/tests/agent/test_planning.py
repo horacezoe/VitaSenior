@@ -69,6 +69,7 @@ def test_ambiguous_medication_missing_slot_future_task_never_guessed(h):
         (values['tasks'],{}),
         ((values['tasks'][0].model_copy(update={'due_at':h.clock.now()+timedelta(hours=1)}),),values['medication_slots']),
         ((values['tasks'][0].model_copy(update={'waiting_for_meal':True}),),values['medication_slots']),
+        ((values['tasks'][0].model_copy(update={'cancelled':True}),),values['medication_slots']),
     ]:
         with h.tx(write=False) as tx:snapshot=h.agent.read_snapshot(tx,h.actor(),body,tasks=tasks,medication_slots=slots)
         plan=h.provider.plan(body,snapshot)

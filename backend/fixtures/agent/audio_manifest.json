@@ -26,5 +26,12 @@
     "text": "您好",
     "sha256": "7092f60a49a5815c5876713dec427bc237aff924967912e10476f33aff56ea0a",
     "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content"
+  },
+  {
+    "fixture_id": "proposal_change_example",
+    "file": "proposal_change_example.wav",
+    "text": "【模拟】孩子申请将医疗备注修改为“补充社区复查记录”。如不同意，请明确拒绝。",
+    "sha256": "1d07d40d6454d6dcda60de23eefc56597fd4b0a8fab4058cfd0a4494b16c4227",
+    "generated_by": "Windows SAPI Microsoft Huihui Desktop; offline fixed spoken content"
   }
 ]

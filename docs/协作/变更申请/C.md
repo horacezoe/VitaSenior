@@ -93,3 +93,20 @@ C 已正常合入 A 的 integration/f1，合并提交38bc09c。A已修复Notific
 C自己的63项全部通过。真实B目前对C确认写入仍标source=user；C未直接改B表冒充agent_confirmed，来源参数的冻结请求仍有效。C HTTP测试中明确断言当前观察到的值，并将来源差异列为未完成的集成事项，不宣称来源验收已通过。
 
 最新正常部署smoke为 `20 ok / 9 pending / 0 failed`；C的AGENT/MEM仍如实PENDING，CHANGE01已因A/B修复变OK。OpenAPI与架构检查通过，hash仍6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d。
+
+
+## 最新复验：已合入 A 的 51dc555，接线和 CHANGE04 闸门已解决
+
+用户指定公共文件由 A 修改。本轮 C 只正常合入 `integration/f1=51dc55517452c094bb169862d1e696f3c683c1fa`，没有自行改 composition/main/core/models/schemas/contracts/OpenAPI/公共测试。默认create_app已共享Clock/Memory并接Agent与三个mock provider；七项C能力为true，runtime正常返回mock；CHANGE04已登记，原200/501闸门失败消失。
+
+C把测试环境改成默认create_app，不再手动装配Agent或替换Memory。跨日用药联调暴露了C自己的真实失败：TaskPort.today会物化目标，C原只读UoW结束会回滚，返回的task_id没有落库。已复现并在C修复：仅需要任务时使用一个独立短写UoW提交目标ID，随后完全释放Session才调用ASR/chat/TTS；音频先识别成功再准备其对应任务，确认前没有Checkin。模型返回后及确认时通过真实ports复核计划/任务版本，版本变化409且不写打卡。来源事实、动作最终状态和幂等成功结果仍由最后一个写UoW原子提交。
+
+新增实际C验收：默认装配Clock/对象身份、跨日任务ID持久性、模型期间/确认前计划变化、真实B取消后C规律失效、新会话上下文变化；使用完整修改内容的真实中文语音，经真实A/B ports测未播报不启动、完整播报后60秒、窗口内C拒绝、到期应用；真实默认Uvicorn网络HTTP一轮也通过。全量237 passed / 42 deselected；C 71 passed；契约和架构通过。正常三轮smoke为24 OK / 7 PENDING / 0 FAIL，尚未零PENDING。
+
+### 仍交给 A/B 的具体业务缺口
+
+1. **A当前提案HTTP仍是提示音，不是完整内容播报。** `app/fixtures/announcement.py::render_announcement(text)` 忽略text，用660/880Hz两个音调生成0.8秒WAV；`identity_flows.create_change`固定调用它。该字节能通过B的MIME/非空检查并启动倒计时，但未逐字播报body.patch，不能据此宣称完整通知内容已被听取。C没有修改A文件。C已提供五号真实语音fixture（proposal_change_example.wav）并通过真实A/B端口验证窗口规则；该测试不等于现有CHANGE01 HTTP已经换成内容语音。请A在事务外按实际修改构建内容，用C TTS的完整匹配语音或真实内容录音；无匹配语音时不要用音调/不匹配录音启动窗口，保留pending_notice和显式接受/拒绝路径。C的有限固定mock不承诺任意新文本TTS。
+2. **Agent确认来源标记仍待冻结。** CheckinPort.create_or_update没有source参数，真实B默认source=user。C保留实际值并由action.result追溯，不直接改B表伪装agent_confirmed。请A/B统一来源参数或经审核的调用上下文约定。
+3. B仍有7个三轮smoke步骤PENDING：DASH01、PLAN02、TASK01、REC02、NOTI02、REC01、REPORT01。C不修改B的能力文件或路由。其他未发布的自动归纳、手机/真实模型/真实播放器验收按各自任务继续。
+
+以上不阻止C的mock API/事务与工具链验收通过，但整体P0与现有HTTP提案完整播报不能标已全部完成。

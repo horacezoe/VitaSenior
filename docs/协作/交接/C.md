@@ -1,4 +1,78 @@
-# C 最新状态：实现已交付，整体集成尚未就绪
+# C 当前交接：51dc555 已合入，mock 联调复验通过
+
+日期：2026-10-31（Asia/Shanghai）。状态：**C2_MOCK_INTEGRATION_VERIFIED；整体 P0 尚未全部完成**。
+
+已验证 C 代码提交：`a2d16f1be086d77787381b7549fe3f793a8c5943`。分支 `backend/agent`。本节覆盖下方历史失败/未接线结论；本文件随后单独提交，不回填自身提交。
+
+## 已合入并复验的 A 修复
+
+正常快进合入 `origin/integration/f1` 的 `51dc55517452c094bb169862d1e696f3c683c1fa`，保留双方历史，未重置或强推。A 已完成：
+
+- 默认 create_app 构造 app.state.agent 与 chat/asr/tts 三个 mock provider。
+- MemoryService/AgentService/真实B服务使用同一应用Clock与Memory实例。
+- Runtime.providers 可正确返回mock，七个C端点登记true。
+- CHANGE04已登记，原“实际200但capability=false”的框架失败已消失。
+- 已接B的Task/History、冻结list/cancel/calendar/dashboard/presence/query，以及19表/soft-cancel字段。公共变化全部来自A提交，C没有自行编辑公共文件。
+
+## 本轮 C 修复与验收
+
+C测试现使用**默认 create_app**，不再手工替换bundle、Memory或Agent装配。只在明确测试错误路径时注入失败provider/缺失port。
+
+真实跨日用药回归先复现了C自己的问题：TaskPort.today会物化当天目标，只读UoW退出后任务被回滚，规划中的task_id不存在。已在C修复为：需要任务时先在独立短写UoW持久化目标并释放锁，再调用provider；音频先识别成功后再准备对应目标。准备阶段只生成目标，不生成Checkin。模型阶段和确认时重新读取真实计划/任务，版本已变则409、不标动作成功。
+
+新增/强化验证：
+
+- 跨日目标ID持久、确认实际服药只写一次；模型期间或确认前计划变化均409，健康记录仍为零。
+- 过滤已取消任务，沿用真实plan slots匹配slot_id，不拆opaque slot_key。
+- 真实B取消记录后，C对应规律在同一事务失效；新conversation不再使用旧规律。
+- 使用逐字包含完整演示修改的真实中文语音，通过真实A/B ports验证未播报不启动、完整播放后60秒、C明确拒绝以及到期自动应用；无服药记录副作用。
+- 新增可重复运行的 `tests/agent/smoke_network.py`：真实默认Uvicorn、127.0.0.1随机端口、新建临时数据库，无装配替身，结束时正常关闭。
+
+## 实际执行结果（backend 工作目录）
+
+环境：Windows / Python3.13.9 / 原requirements.lock / FakeClock与tmp_path；供应商无真实调用。没有触碰运行数据库。
+
+```text
+python -m pytest tests/agent -q --tb=short
+71 passed, 1 warning in 12.29s
+
+python -m pytest tests -q --tb=short
+237 passed, 42 deselected, 1 warning in 51.11s
+
+python -m app.tools.export_contract --check
+OpenAPI matches 4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c
+
+python -m app.tools.check_architecture
+Architecture OK: no cross-domain implementation imports
+
+python tests/agent/smoke_network.py
+C_NETWORK_SMOKE_OK
+
+python -m app.tools.integration_smoke
+24 ok, 7 pending, 0 failed
+```
+
+42 deselected是A0明确分类的历史F0阶段测试；唯一warning为既有Starlette/httpx弃用提示，未屏蔽。没有失败测试被删除或放宽。
+
+真实网络烟测包含：健康检查、DEMO/登录、手工建档确认、真实绑定、图片上传、Agent pending→确认→重复确认、真实日报同一记录、跨会话偏好、已绑定子女读记忆、真实音频上传/mock ASR、固定TTS及ticket取回原始语音字节、未知语音文本明确501、模型超时504、CHANGE04本人明确接受。不是仅TestClient验证。
+
+## 写入边界
+
+实际新增/修改仅C白名单：application/agent_flows.py、services/agent_service.py、providers/mock_chat.py、fixtures/agent、tests/agent及C自己的交接/变更申请。目标版本复核只通过冻结ports，无A/B业务表写入捷径。main/composition/core/models/schemas/contracts/依赖/OpenAPI/公共测试未由C修改；OpenAPI保持A的4b7ade…快照。
+
+## 仍未完成且不计为通过
+
+1. 三轮smoke仍有B的7个PENDING：DASH01、PLAN02、TASK01、REC02、NOTI02、REC01、REPORT01。相关服务可被C工具调用，不代表其HTTP能力均已启用。严格零PENDING验收尚未通过。
+2. **A当前CHANGE01 HTTP音频仍为0.8秒双音提示，未播报实际修改内容。** 本轮完整播放窗口测试用C新增的真实 `proposal_change_example.wav`，直接经共享GeneratedAudio/ChangePort提供完整固定文本语音；这不等于A的HTTP生产路径已经替换提示音。请A处理，具体代码位置与建议见变更申请/C.md。不能把该提示音视作用户完整听取修改后的自动应用证据。
+3. B的冻结CheckinPort仍没有Agent来源参数，真实记录source仍为user；C没有直接改B表冒充agent_confirmed。Action.result可追溯实际记录，来源字段统一仍交A/B。
+4. 真实供应商、手机HTTPS/真实播放器、任意文本TTS、自动规律整理等未在本轮发布或验收。五段固定中文语音只对应各自完整文本，无匹配时明确降级/501，不用音调或不匹配录音代替。
+
+完整当前申请在 `docs/协作/变更申请/C.md` 的“最新复验”段。A可正常合入本分支后重跑上述命令；公共文件与B能力启用继续由A/B负责。下方保留此前阶段历史，不代表当前仍缺接线或CHANGE04仍失败。
+
+---
+
+
+# C 历史交接：51dc555 合入前的集成状态
 
 2026-10-31（Asia/Shanghai）。状态：**C2_IMPLEMENTED_PENDING_SHARED_FIXES / INTEGRATION_NOT_READY**。
 
