@@ -16,3 +16,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# F0-only assertions are frozen stage markers, not a permanent contract: run them
+# explicitly with `pytest -m f0_stage`. The default suite tracks real capabilities.
+markers = ["f0_stage: frozen F0 baseline assertions (all-business-501, five capabilities only)"]
+addopts = "-m 'not f0_stage'"
