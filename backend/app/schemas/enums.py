@@ -1,0 +1,65 @@
+from enum import StrEnum
+class Role(StrEnum):
+    elder = "elder"
+    child = "child"
+class Category(StrEnum):
+    diet = "diet"
+    exercise = "exercise"
+    medication = "medication"
+class MealSlot(StrEnum):
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+class ProposalStatus(StrEnum):
+    pending_notice = "pending_notice"
+    awaiting_decision = "awaiting_decision"
+    applied = "applied"
+    rejected = "rejected"
+    cancelled = "cancelled"
+    conflicted = "conflicted"
+class DeliveryState(StrEnum):
+    pending = "pending"
+    displayed = "displayed"
+    answered = "answered"
+    played = "played"
+class TaskState(StrEnum):
+    open = "open"
+    snoozed = "snoozed"
+    handled = "handled"
+    dismissed = "dismissed"
+class PushState(StrEnum):
+    not_attempted = "not_attempted"
+    unsupported = "unsupported"
+    sent = "sent"
+    failed = "failed"
+class EventType(StrEnum):
+    displayed = "displayed"
+    answered = "answered"
+    playback_completed = "playback_completed"
+    handled = "handled"
+    snoozed = "snoozed"
+    dismissed = "dismissed"
+class NotificationKind(StrEnum):
+    meal_checkin = "meal_checkin"
+    exercise_checkin = "exercise_checkin"
+    medication = "medication"
+    family_voice = "family_voice"
+    profile_change = "profile_change"
+    daily_summary = "daily_summary"
+class ActionStatus(StrEnum):
+    pending = "pending"
+    confirmed = "confirmed"
+    cancelled = "cancelled"
+    expired = "expired"
+class ActionType(StrEnum):
+    record_diet = "record_diet"
+    record_exercise = "record_exercise"
+    record_medication = "record_medication"
+    create_medication_plan = "create_medication_plan"
+    update_medication_plan = "update_medication_plan"
+    update_profile = "update_profile"
+    create_binding_code = "create_binding_code"
+    respond_notification = "respond_notification"
+    decide_change = "decide_change"
+    update_memory = "update_memory"
+    query_report = "query_report"

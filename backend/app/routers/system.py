@@ -1,0 +1,30 @@
+from fastapi import APIRouter, Request
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import AwareDatetime
+from typing import Literal
+from app.schemas.common import DTO, Envelope
+from app.routers.dependencies import Context
+
+from app.schemas.system import Health, Runtime
+
+router = APIRouter()
+@router.get("/health", operation_id="SYS01", response_model=Envelope[Health])
+def health(request: Request):
+    db = "ok"
+    try:
+        with request.app.state.engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        db = "unavailable"
+    scanner = request.app.state.scanner
+    state = "disabled" if not scanner.enabled else scanner.status
+    data = Health(status="ok" if db == "ok" and state not in {"failed", "stopped"} else "degraded", database=db, scheduler=state)
+    return request.app.state.respond(request, data)
+
+@router.get("/runtime", operation_id="SYS02", response_model=Envelope[Runtime])
+def runtime(ctx: Context):
+    implemented = {"SYS01", "SYS02", "AUTH01", "AUTH02", "AUTH04"}
+    ids = {op["operationId"] for item in ctx.request.app.openapi()["paths"].values() for method, op in item.items() if method in {"get", "post", "put", "delete"}}
+    data = Runtime(mode="demo", providers={"chat": "not_implemented", "asr": "not_implemented", "tts": "not_implemented"}, capabilities={**{i: i in implemented for i in sorted(ids)}, "web_push": False}, timezone="Asia/Hong_Kong", server_time=ctx.request.app.state.clock.now())
+    return ctx.request.app.state.respond(ctx.request, data)
