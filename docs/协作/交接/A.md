@@ -333,10 +333,13 @@ C 原测试 `test_default_unwired_deployment_stays_501_and_capability_false` 的
 已不成立，改写为 `test_agent_wiring_guard_and_activation`：`_ready(Bare())` 必须 501，默认部署必须
 四属性齐全、providers 报 mock、7 项能力为 true。
 
-**实测**：`pytest tests -q` → **229 passed, 42 deselected**；联调 **24 ok / 7 pending / 0 failed**。
-第一轮链路已基本打通：DEMO01 → 建档确认 → 绑定 → 午餐图片 → `AGENT01` 生成待确认动作 →
+**实测**：`pytest tests -q` → **237 passed, 42 deselected**（含合入 C 的 `a2d16f1`/`1e31bb6`：
+默认部署验收 + 可持久化用药任务准备 + 通知→提案关联走 `ChangePort.query`）；联调
+**24 ok / 7 pending / 0 failed**。C 已用冻结的 `ChangePort.decide` 接好 `decide_change` 动作。
+第一轮链路已打通：DEMO01 → 建档确认 → 绑定 → 午餐图片 → `AGENT01` 生成待确认动作 →
 `AGENT02` 确认后经 B 的 `CheckinPort` 落成真实打卡；`MEM01` 可读。剩余 7 个 pending 全部是 B 的
 health 接口尚未开启 `health_capabilities`（`PLAN02/TASK01/REC01/REC02/REPORT01/NOTI02/DASH01`）。
+若把这 7 个已验证接口的开关临时打开，联调结果为 **27 ok / 4 pending / 0 failed**。
 
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
