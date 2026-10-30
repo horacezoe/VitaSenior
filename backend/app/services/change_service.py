@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.contracts.context import Actor
 from app.core.auth import require_elder_access
+from app.fixtures.announcement import ANNOUNCEMENT_TEXT
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -36,7 +37,7 @@ TITLES = {
     ("medication_plan", "update"): "孩子帮您修改了用药计划",
     ("medication_plan", "deactivate"): "孩子帮您停用了用药计划",
 }
-NOTICE_TEXT = "请听取本次修改，如不同意可以拒绝。"
+NOTICE_TEXT = ANNOUNCEMENT_TEXT
 
 class ChangeService:
     def __init__(self, clock: Clock, settings: Settings):
@@ -44,18 +45,21 @@ class ChangeService:
         self.medication = None      # MedicationPort (B)
         self.notifications = None   # NotificationPort (B)
         self.memory = None          # MemoryPort (C)
+        self.media = None           # MediaService (A, same domain) for announcement audio
 
-    def bind(self, *, medication=None, notifications=None, memory=None) -> "ChangeService":
+    def bind(self, *, medication=None, notifications=None, memory=None, media=None) -> "ChangeService":
         """Late binding breaks the A<->B notification/change reference cycle.
         Only composition calls this; services never look each other up."""
         self.medication = medication or self.medication
         self.notifications = notifications or self.notifications
         self.memory = memory or self.memory
+        self.media = media or self.media
         return self
 
     # ---- public port surface -------------------------------------------------
 
-    def create(self, tx: Session, actor: Actor, elder_id: str, body: ChangeProposalWrite, now: datetime) -> ChangeProposal:
+    def create(self, tx: Session, actor: Actor, elder_id: str, body: ChangeProposalWrite, now: datetime, *,
+               audio=None) -> ChangeProposal:
         require_elder_access(tx, actor, elder_id, "child")
         self._validate_target(tx, elder_id, body)
         snapshot = self._snapshot(tx, actor, elder_id, body)
@@ -67,10 +71,16 @@ class ChangeService:
         )
         tx.add(row)
         tx.flush()  # notification FK needs the proposal id
+        # `audio` was rendered OUTSIDE this write tx (see identity_flows.create_change);
+        # here it is only registered so the elder can complete a real playback.
+        audio_asset_id = None
+        if audio is not None:
+            audio_asset_id = self.media.register_announcement(
+                tx, elder_id, content=audio.content, mime_type=audio.mime_type, duration_ms=audio.duration_ms).asset_id
         notification = self.notifications.enqueue(tx, actor, f"proposal:{row.id}", NotificationEnqueue(
             elder_id=elder_id, kind="profile_change", category="general",
             title=TITLES[(body.target_type, body.operation)], text=NOTICE_TEXT,
-            repeat_count=1, due_at=now, proposal_id=row.id,
+            audio_asset_id=audio_asset_id, repeat_count=1, due_at=now, proposal_id=row.id,
         ))
         # The port returns the Notification DTO (notification_id), not an ORM row.
         row.notification_id = notification.notification_id
@@ -114,6 +124,8 @@ class ChangeService:
 
     def mark_played(self, tx: Session, actor: Actor, proposal_id: str, now: datetime) -> ChangeProposal:
         row = self._row(tx, proposal_id)
+        # Only the elder whose proposal it is may report a playback completion.
+        require_elder_access(tx, actor, row.elder_id, "self")
         if row.status != "pending_notice":
             # Idempotent receipt: never re-arm an already started window.
             return self.view(row)
@@ -131,7 +143,7 @@ class ChangeService:
         ).order_by(ChangeProposalRow.auto_apply_at)).all()
         settled = []
         for row in rows:
-            settled.append(self._apply(tx, self._system_actor(tx, row), row, now, applied_by="timeout"))
+            settled.append(self._apply(tx, self._principal_for_timeout(tx, row), row, now, applied_by="timeout"))
         return settled
 
     # ---- internals -----------------------------------------------------------
@@ -199,7 +211,7 @@ class ChangeService:
 
     def _settle_if_due(self, tx: Session, row: ChangeProposalRow, now: datetime) -> None:
         if row.status == "awaiting_decision" and row.auto_apply_at is not None and row.auto_apply_at <= now:
-            self._apply(tx, self._system_actor(tx, row), row, now, applied_by="timeout")
+            self._apply(tx, self._principal_for_timeout(tx, row), row, now, applied_by="timeout")
 
     def _apply(self, tx: Session, actor: Actor, row: ChangeProposalRow, now: datetime, *, applied_by: str) -> ChangeProposal:
         elder = tx.get(ElderProfile, row.elder_id)
@@ -229,11 +241,18 @@ class ChangeService:
             self._bump(elder, now)
             tx.flush()
         else:
-            plan = self.medication.get_plan(tx, actor, row.target_id)
-            if row.base_version != plan.version:
-                return self._conflict(tx, row, "version_changed")
-            self.medication.apply_change(tx, actor, row.elder_id, row.operation, row.target_id,
-                                         self._patch_model(row), row.base_version)
+            # Frozen contract: create has no target to read and no expected version;
+            # deactivate carries a null patch; only update reads+compares the plan.
+            if row.operation == "create":
+                self.medication.apply_change(tx, actor, row.elder_id, "create", None,
+                                             self._patch_model(row), None)
+            else:
+                plan = self.medication.get_plan(tx, actor, row.target_id)
+                if row.base_version != plan.version:
+                    return self._conflict(tx, row, "version_changed")
+                patch = None if row.operation == "deactivate" else self._patch_model(row)
+                self.medication.apply_change(tx, actor, row.elder_id, row.operation, row.target_id,
+                                             patch, row.base_version)
         row.status = "applied"
         row.applied_at = now
         row.applied_by = applied_by
@@ -259,9 +278,16 @@ class ChangeService:
         if row.notification_id:
             self.notifications.mark_proposal_handled(tx, row.notification_id)
 
-    def _system_actor(self, tx: Session, row: ChangeProposalRow) -> Actor:
-        """The scanner has no request Actor. It settles as the elder's own account,
-        which is the only account allowed to read/apply this proposal."""
+    def _principal_for_timeout(self, tx: Session, row: ChangeProposalRow) -> Actor:
+        """Scanner settlement has no request Actor, but the frozen B/C ports require
+        one. The elder is the *principal* of their own change, so we pass the elder's
+        own identity - never a synthetic user - and the audit column records
+        applied_by="timeout" so nobody mistakes it for a user decision. This grants
+        nothing that the elder's own request would not already be allowed to do.
+
+        A genuinely actor-free path would need the B/C port signatures to accept a
+        system call; that is a contracts change for all three, tracked in the
+        handoff as the remaining item."""
         elder = tx.get(ElderProfile, row.elder_id)
         return Actor(elder.owner_user_id, Role.elder)
 

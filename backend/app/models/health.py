@@ -34,7 +34,25 @@ class DailyTask(Base):
     due_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     waiting_for_meal: Mapped[bool] = mapped_column(default=False)
     source_key: Mapped[str | None] = mapped_column(String, unique=True)
+    # Soft deactivation: a task that already has notifications/FKs is never deleted,
+    # so deleting a future slot or deactivating a plan keeps history and the report
+    # denominator intact while the row stops counting as an open goal.
+    cancelled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     __table_args__ = (UniqueConstraint("elder_id", "local_date", "category", "slot_key"), CheckConstraint("category IN ('diet','exercise','medication')"))
+class DailyGoalBatch(Base):
+    """One row per (elder, local date, category) that has materialised goals.
+
+    Presence of the row means "this day's goals for the category were generated at
+    generated_at". It distinguishes "generated and nothing applicable" (row exists,
+    expected=0) from "never generated" (no row) - a past date must never be
+    back-filled from today's plan or settings.
+    """
+    __tablename__ = "daily_goal_batches"
+    elder_id: Mapped[str] = mapped_column(ForeignKey("elder_profiles.id"), primary_key=True)
+    local_date: Mapped[date] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String, primary_key=True)
+    generated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    __table_args__ = (CheckConstraint("category IN ('diet','exercise','medication')"),)
 class Checkin(Base):
     __tablename__ = "checkins"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("checkin"))

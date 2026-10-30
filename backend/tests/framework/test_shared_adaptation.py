@@ -21,8 +21,8 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     assert declared_capabilities() <= mounted
     assert set(capabilities(mounted)) == mounted
     assert capabilities(mounted)['SYS01'] is True
-    # CHANGE04 is the long-lived "still gated" probe: applying needs C's MemoryPort.
-    assert capabilities(mounted)['CHANGE04'] is False
+    # AGENT01 is the long-lived "still gated" probe: C's HTTP layer is not wired yet.
+    assert capabilities(mounted)['AGENT01'] is False
 
 def test_services_receive_the_application_clock_and_settings(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))
@@ -71,7 +71,13 @@ def test_history_import_entry_validates_scenario_and_delegates():
         import_demo_history(None, services, actor, 'elder_demo', demo_id='demo_1', scenario='unknown')
 
 def test_unimplemented_demo_history_is_not_swallowed():
-    services = compose()
+    """B's history port is real now; the guarantee is that a *failing* downstream
+    import still propagates instead of being reported as a successful confirm."""
+    class StubHistory:
+        def import_demo_history(self, tx, actor, elder_id, *, demo_id, days):
+            raise AppError(501, "MODULE_NOT_IMPLEMENTED", "history unavailable in this test")
+    from dataclasses import replace
+    services = replace(compose(), history=StubHistory())
     with pytest.raises(AppError) as exc:
         import_demo_history(None, services, Actor('user_demo', Role.elder), 'elder_demo', demo_id='demo_1')
     assert exc.value.status == 501

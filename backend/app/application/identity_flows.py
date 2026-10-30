@@ -12,6 +12,8 @@ from app.contracts.media import MediaContent
 from app.core.auth import authenticate
 from app.core.errors import AppError, unimplemented
 from app.core.idempotency import StoredResult
+from app.fixtures.announcement import ANNOUNCEMENT_TEXT, render_announcement
+from app.routers.dependencies import check_access, read_unit, write_unit
 from app.seed import import_demo_history
 
 DEMO_RATE_LIMIT = 10
@@ -133,12 +135,27 @@ def media_content(ctx, asset_id: str, ticket: str | None) -> MediaContent:
 
 # ---- CHANGE01-04 ------------------------------------------------------------
 
-def create_change(ctx, elder_id: str, body, key: str) -> dict:
-    state = _state(ctx)
-    def operation():
-        return state.services.changes.create(ctx.tx, ctx.actor, elder_id, body, state.clock.now()).model_dump(mode="json")
-    return _idempotent(ctx, key=key, status_code=201,
-                       body={"elder_id": elder_id, **body.model_dump(mode="json")}, operation=operation)
+def create_change(auth, elder_id: str, body, key: str) -> dict:
+    """Two-phase on purpose: the announcement audio is rendered OUTSIDE the write
+    transaction, then only registered inside it, so no provider work holds
+    BEGIN IMMEDIATE. A replay re-renders the (local, deterministic) cue and then
+    returns the stored result, which is harmless."""
+    request = auth.request
+    state = request.app.state
+    with read_unit(request) as uow:
+        check_access(request, uow.session, auth.actor, elder_id, "child")
+    audio = render_announcement(ANNOUNCEMENT_TEXT)
+    with write_unit(request) as uow:
+        check_access(request, uow.session, auth.actor, elder_id, "child")
+        def operation():
+            proposal = state.services.changes.create(uow.session, auth.actor, elder_id, body,
+                                                    state.clock.now(), audio=audio)
+            return StoredResult(201, proposal.model_dump(mode="json"))
+        stored = state.idempotency.execute(
+            uow.session, actor_id=auth.actor.user_id, method=request.method, path=request.url.path,
+            key=key, body={"elder_id": elder_id, **body.model_dump(mode="json")}, operation=operation)
+        uow.commit()
+    return stored.data
 
 def list_changes(ctx, elder_id: str, status, limit: int, cursor: str | None):
     return _state(ctx).services.changes.query(ctx.tx, ctx.actor, elder_id, status, limit, cursor)

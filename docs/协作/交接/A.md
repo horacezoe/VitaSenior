@@ -22,7 +22,7 @@
 | 阶段 | SHA-256 |
 | --- | --- |
 | F0 基线（A0 结束时未变） | `73f9920606bdd8c6338c67327e72adef1ea1a474352aa4c22c949e071ad75657` |
-| A1/A2 结束（当前） | `6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d` |
+| A1/A2 结束（当前） | `23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560` |
 
 唯一的契约差异是 MEDIA03 的 security 从 `[{HTTPBearer}]` 变为 `[{HTTPBearer}, {}]`：
 任务单要求“有效 ticket 单独授权，仍保留 Bearer”，而 `<audio src>` 无法附加 Authorization 头，
@@ -226,7 +226,7 @@ import_demo_history(tx, services, actor, elder_id, demo_id=demo_id, scenario="di
 | `python -m pytest tests/identity -q` | `39 passed` |
 | `python -m pytest tests/framework -q` | `70 passed, 42 deselected` |
 | `python -m pytest tests -m f0_stage -q` | `42 skipped`（阶段已关闭，符合设计） |
-| `python -m app.tools.export_contract --check` | `OpenAPI matches 6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d` |
+| `python -m app.tools.export_contract --check` | `OpenAPI matches 23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560` |
 | `python -m app.tools.check_architecture` | `Architecture OK` |
 | `python -m pip check` | `No broken requirements found.` |
 | 真实 uvicorn 冒烟（临时 DATA_DIR、`SCANNER_ENABLED=true`、127.0.0.1:8123） | health/DEMO01（含重放）/AUTH01-02/me/runtime/PROF01/ONB01/BIND01-04/MEDIA01-03（含 ticket 播放真实字节）全部通过；CHANGE01 在 B 未就绪时如实 501；`SMOKE_OK` |
@@ -286,6 +286,34 @@ B 的 `backend/health` = `b1535f8` 已经把我的 A0/A1/A2 全部合入（`72d7
 `backend/health` 上此时有 **158 passed, 42 deselected**（含上面的修复）、契约 hash 未变、
 `Architecture OK`。
 
+
+### 11.4 B 的七项请求落地情况（`integration/f1`，另含 C 合并）
+
+已合入 B 的 `8fc6289`（在 `b1535f8` 之上）与 C 的 `backend/agent`（`7d8bfea`），两者均无冲突。
+
+| B 的请求 | 落地 |
+| --- | --- |
+| 1. 合入 `8fc6289` | 已合入，`integration/f1` 现含 A0/A1/A2 + B1/B2 + C1 |
+| 2. `tasks=checkins`, `history=checkins` | 已按 B 的写法接线，`TaskService`/`HistoryService` 两个 A0 桩不再被组装使用 |
+| 3. 冻结已有服务方法 | `contracts/ports.py` 已加：`MedicationPort.list/settings/update_settings`、`CheckinPort.list/cancel`、`ReportPort.calendar/dashboard`、`NotificationPort.presence/query`，签名与 B 变更申请逐字一致 |
+| 4. 合入 C 并注入 clock/access | 已合入；`MemoryService(clock, access)`，六项测试验证 `service.clock is app.state.clock` |
+| 5. 模型约定 | `daily_tasks.cancelled_at`（软停用，不删行）、新表 `daily_goal_batches(elder_id, local_date, category, generated_at)`（区分"已生成且不适用"与"从未生成"）、`DailyTask.cancelled: bool=False` |
+| 6. 通知协作 | 播报计数约定按 B 的逐次 `playback_completed.event_id` 采纳；提案通知现在带**真实音频**（见下）；扫描器一个 tick 内同 tx 先跑 `notifications.scan` 再跑 `changes.apply_due`；亲情录音所有权由 `MediaPort.assert_owned_voice` 提供 |
+| 7. A2 修正 | 用药提案 `create` 不再 `get_plan(None)`、`deactivate` 传 `patch=None`、`mark_played` 补 `require_elder_access(...,"self")`、`_system_actor` 改名 `_principal_for_timeout` 并说明不是伪造用户决定（`applied_by="timeout"` 审计） |
+
+**提案音频（原第 6/13 项）**：`CHANGE01` 改为两段式——短读鉴权 → 事务外渲染确定性演示提示音
+（`app/fixtures/announcement.py`，本地 PCM，不走供应商）→ 短写事务内 `register_announcement`
+登记并用 `audio_asset_id` 入队通知。因此"完整音频播报"现在可真正启动 60 秒窗口。真实语音仍由 C 的
+TTS 在事务外替换该 fixture，事务形状不变。
+
+**契约变化（本次唯一）**：`DailyTask` 增加 `cancelled` 字段，OpenAPI 重新导出为
+`23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`；表数从 18 变 19
+（`daily_goal_batches`）。`fg04` 的表集合断言已同步。
+
+**当前验证**：`pytest tests -q` → **211 passed, 42 deselected**；`Architecture OK`；
+联调脚本 **21 ok / 8 pending / 0 failed**——`ONB02` 已由 PENDING 转 OK（B 的计划导入 + 历史导入
+经 `history=checkins` 生效），`CHANGE01` 已 OK。剩余 pending：`PLAN02/TASK01/REC01/REPORT01/
+NOTI02`（B 未开启 `health_capabilities`，按他要求由他自己逐项开）、`AGENT01/MEM01`（C 的 HTTP 层）。
 
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 

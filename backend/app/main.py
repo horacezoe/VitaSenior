@@ -50,15 +50,18 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
     app.state.identity = compose_identity(clock)
     app.state.idempotency = Idempotency(clock)
     def settle_due_proposals(now):
-        """Server-side settlement of expired proposal windows. Due state lives in
-        SQLite, so a restart resumes from auto_apply_at with no in-process timer."""
+        """One tick, one transaction: B's deterministic reminder scan creates the due
+        notifications, then A settles expired proposal windows from SQLite. Both run
+        on the server clock, so a restart resumes with no in-process timer, and only
+        one tick pipeline exists (never enable a second loop)."""
         try:
             with UnitOfWork(app.state.sessions) as uow:
+                app.state.services.notifications.scan(uow.session, now)
                 app.state.services.changes.apply_due(uow.session, now)
                 uow.commit()
         except Exception:
             # Never mark anything applied on failure; the next tick retries.
-            log.exception("due-proposal settlement failed; retrying next tick")
+            log.exception("scan/settlement tick failed; retrying next tick")
     app.state.scanner = Scanner(clock, enabled=settings.scanner_enabled, interval=settings.scanner_interval,
                                 tick_hook=settle_due_proposals)
     def meta(request):

@@ -21,7 +21,7 @@ from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.ids import new_id
-from app.models.identity import MediaAsset as MediaAssetRow
+from app.models.identity import ElderProfile, MediaAsset as MediaAssetRow
 from app.schemas.identity import MediaAsset
 
 IMAGE_PURPOSES = frozenset({"meal", "ingredient", "medicine", "face", "document"})
@@ -61,6 +61,28 @@ class MediaService:
             raise AppError(415, "MEDIA_UNSUPPORTED", "Generated media must be audio")
         return self._persist(tx, owner_user_id=actor.user_id, elder_id=elder_id, purpose=purpose,
                              content_type=mime_type, content=content, duration_ms=duration_ms)
+
+    def register_announcement(self, tx: Session, elder_id: str, *, content: bytes, mime_type: str, duration_ms: int | None) -> MediaAsset:
+        """Internal entry for the authorised proposal flow (not a public port).
+
+        ChangeService has already verified that the elder owns this proposal, so the
+        asset is owned by the elder's account; the caller must have prepared the
+        bytes OUTSIDE this transaction."""
+        elder = tx.get(ElderProfile, elder_id)
+        if elder is None:
+            raise AppError(404, "NOT_FOUND", "Resource unavailable")
+        return self._persist(tx, owner_user_id=elder.owner_user_id, elder_id=elder_id, purpose="agent_audio",
+                             content_type=mime_type, content=content, duration_ms=duration_ms)
+
+    def assert_owned_voice(self, tx: Session, actor: Actor, asset_id: str) -> MediaAsset:
+        """Reference check for family-reminder audio: only the uploader's own
+        voice_message asset may be attached to a reminder they send."""
+        row = self._row(tx, asset_id)
+        if row.owner_user_id != actor.user_id:
+            raise AppError(404, "NOT_FOUND", "Resource unavailable")
+        if row.purpose != "voice_message":
+            raise AppError(415, "MEDIA_UNSUPPORTED", "Attached audio must be a voice message")
+        return self._view(row)
 
     def open_content(self, tx: Session, actor: Actor | None, asset_id: str, *, ticket: str | None = None) -> MediaContent:
         row = self._row(tx, asset_id)

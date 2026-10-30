@@ -20,11 +20,9 @@ from app.services.change_service import ChangeService
 from app.services.medication_service import MedicationService
 from app.services.health_service import CheckinService
 from app.services.notification_service import NotificationService
-from app.services.task_service import TaskService
 from app.services.report_service import ReportService
 from app.services.memory_service import MemoryService
 from app.services.media_service import MediaService
-from app.services.history_service import HistoryService
 from app.services import agent_capabilities, health_capabilities, identity_capabilities
 
 from app.contracts.bundle import ServiceBundle
@@ -38,15 +36,14 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
     clock, settings = clock or SystemClock(), settings or Settings()
     access = AccessService()
     media = MediaService(clock, settings)
-    # C's MemoryService takes (clock, access) once backend/agent is merged; today's
-    # stub takes no arguments, so the constructor call is the one edit to make then.
-    memory = MemoryService()
+    # C's MemoryService takes (clock, access) so its revisions use the same clock.
+    memory = MemoryService(clock, access)
     medication = MedicationService(clock, access=access, media=media, memory=memory)
-    checkins = CheckinService(clock, access=access, memory=memory, media=media)
+    checkins = CheckinService(clock, access=access, media=media, memory=memory)
     reports = ReportService(clock, access=access, memory=memory)
     changes = ChangeService(clock, settings)
     notifications = NotificationService(clock, access=access, media=media, changes=changes)
-    changes.bind(medication=medication, notifications=notifications, memory=memory)
+    changes.bind(medication=medication, notifications=notifications, memory=memory, media=media)
     return ServiceBundle(
         access=access,
         binding=BindingService(clock, limiter),
@@ -58,8 +55,11 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
         reports=reports,
         memory=memory,
         media=media,
-        tasks=TaskService(),
-        history=HistoryService(),
+        # B implements today's goal generation and the 14-day import on the health
+        # service itself, so the narrow Task/History ports point at that instance
+        # instead of a second implementation (B keeps his whitelist).
+        tasks=checkins,
+        history=checkins,
     )
 
 def declared_capabilities() -> frozenset[str]:

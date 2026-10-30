@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query, Header, UploadFile, File, Form, Response
 from fastapi.responses import FileResponse
 from app.schemas.common import Envelope, Page
 from app.schemas.enums import ProposalStatus
-from app.routers.dependencies import Context, Public, access, resource_access, role
+from app.routers.dependencies import Auth, Context, Public, access, resource_access, role
 from app.schemas.identity import BindingCode, BindingPreview, BindingPreviewWrite, BindingResult, BindingWrite, ChangeDecision, ChangeProposal, ChangeProposalWrite, ConfirmWrite, DemoExperience, DemoWrite, ElderList, MatchResult, MatchWrite, MediaAsset, Profile, ProfileUpdate
 from app.application import identity_flows as flows
 
@@ -95,11 +95,11 @@ def media03(ctx: Public, asset_id: str, ticket: str | None = None):
     return FileResponse(content.path, media_type=content.mime_type)
 
 @router.post("/elders/{elder_id}/change-proposals", operation_id="CHANGE01", response_model=Envelope[ChangeProposal], status_code=201)
-def change01(ctx: Context, elder_id: str, body: ChangeProposalWrite, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
-    access(ctx, elder_id, "child")
-    data = flows.create_change(ctx, elder_id, body, idempotency_key)
-    ctx.uow.commit()
-    return ctx.request.app.state.respond(ctx.request, data)
+def change01(auth: Auth, elder_id: str, body: ChangeProposalWrite, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
+    # No long write tx: the flow renders the announcement audio outside the lock,
+    # then re-checks access and stores the proposal in its own short write UoW.
+    data = flows.create_change(auth, elder_id, body, idempotency_key)
+    return auth.request.app.state.respond(auth.request, data)
 
 @router.get("/elders/{elder_id}/change-proposals", operation_id="CHANGE02", response_model=Envelope[Page[ChangeProposal]], status_code=200)
 def change02(ctx: Context, elder_id: str, status: ProposalStatus | None = None, limit: Annotated[int, Query(ge=1, le=100)] = 20, cursor: str | None = None):

@@ -118,7 +118,7 @@ def test_fg03_challenge_ownership_expiry_and_limits(env):
 def test_fg04_tables_foreign_keys_and_uniqueness(env):
     app,client,clock,seed=env
     from app.core.db import Base
-    assert set(Base.metadata.tables) == {'users','auth_sessions','auth_challenges','elder_profiles','family_bindings','binding_codes','media_assets','change_proposals','idempotency_records','medication_plans','daily_tasks','checkins','notifications','notification_events','presence','agent_turns','agent_actions','memory_documents'}
+    assert set(Base.metadata.tables) == {'users','auth_sessions','auth_challenges','elder_profiles','family_bindings','binding_codes','media_assets','change_proposals','idempotency_records','medication_plans','daily_tasks','daily_goal_batches','checkins','notifications','notification_events','presence','agent_turns','agent_actions','memory_documents'}
     with app.state.engine.connect() as conn:
         assert conn.execute(text('PRAGMA foreign_keys')).scalar()==1
         assert conn.execute(text('PRAGMA journal_mode')).scalar()=='wal'

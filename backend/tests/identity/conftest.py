@@ -109,7 +109,7 @@ class FakeNotifications:
         row = NotificationRow(elder_id=payload.elder_id, source_key=source_key,
                               kind=str(payload.kind), title=payload.title, text=payload.text,
                               repeat_count=payload.repeat_count, due_at=payload.due_at,
-                              proposal_id=payload.proposal_id)
+                              audio_asset_id=payload.audio_asset_id, proposal_id=payload.proposal_id)
         tx.add(row)
         tx.flush()
         self.enqueued.append(row)
@@ -146,7 +146,8 @@ def fakes(env):
     original = app.state.services
     bundle = Fakes(FakeMedication(), FakeHistory(), FakeNotifications(), FakeMemory())
     changes = ChangeService(clock, app.state.settings).bind(
-        medication=bundle.medication, notifications=bundle.notifications, memory=bundle.memory)
+        medication=bundle.medication, notifications=bundle.notifications,
+        memory=bundle.memory, media=original.media)
     app.state.services = replace(original, medication=bundle.medication, history=bundle.history,
                                  notifications=bundle.notifications, memory=bundle.memory, changes=changes)
     yield bundle

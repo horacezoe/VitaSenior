@@ -1,5 +1,7 @@
 """DEMO01 / ONB01 / ONB02: independent pair, draft isolation, confirmed profile."""
+from dataclasses import replace
 from sqlalchemy import func, select
+from app.core.errors import AppError
 from app.models.identity import ElderProfile, FamilyBinding, User
 from conftest import auth_header, hdr
 
@@ -99,14 +101,28 @@ def test_onb02_rejects_a_stale_expected_version(demo, fakes):
     assert conflict.json()['error']['code'] == 'VERSION_CONFLICT'
     assert conflict.json()['error']['details']['current_version'] == 1
 
-def test_onb02_rolls_back_when_the_medication_port_is_unimplemented(demo):
-    """Real B port is still a 501 stub: the profile must NOT be confirmed."""
+def test_onb02_rolls_back_when_the_medication_port_fails(demo, env):
+    """B's port is real now, so inject a failing one: a downstream error must roll
+    the whole confirmation back instead of leaving a half-confirmed profile."""
+    app, client, clock, seed = env
+    class BrokenMedication:
+        def import_draft(self, *args, **kwargs):
+            raise AppError(501, 'MODULE_NOT_IMPLEMENTED', 'plan import unavailable in this test')
+        def get_plan(self, *args, **kwargs):
+            raise AppError(501, 'MODULE_NOT_IMPLEMENTED', 'not used')
+        def apply_change(self, *args, **kwargs):
+            raise AppError(501, 'MODULE_NOT_IMPLEMENTED', 'not used')
     matched = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/match',
                                json={'sample_identity_key': 'community_sample_001'}, headers=hdr(demo.elder, 'match-1')).json()['data']
     assert matched['medication_plan_drafts'], 'fixture must exercise the cross-domain import'
     body = {'draft_id': matched['draft_id'], 'profile': {'display_name': '陈阿姨'},
             'medication_plans': matched['medication_plan_drafts'], 'expected_version': 1}
-    failed = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/confirm', json=body, headers=hdr(demo.elder, 'confirm-x'))
+    original = app.state.services
+    app.state.services = replace(original, medication=BrokenMedication())
+    try:
+        failed = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/confirm', json=body, headers=hdr(demo.elder, 'confirm-x'))
+    finally:
+        app.state.services = original
     assert failed.status_code == 501, failed.text
     assert failed.json()['error']['code'] == 'MODULE_NOT_IMPLEMENTED'
     profile = demo.client.get(f'/api/v1/elders/{demo.elder_id}/profile', headers=demo.elder).json()['data']

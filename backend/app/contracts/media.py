@@ -12,3 +12,13 @@ class MediaContent:
     mime_type: str
     size_bytes: int
     path: Path
+
+@dataclass(frozen=True)
+class GeneratedAudio:
+    """Bytes produced OUTSIDE the write transaction (TTS / pre-rendered demo cue).
+
+    Flows prepare this before opening the write UoW, then register it in-tx through
+    MediaPort so no provider call ever sits inside BEGIN IMMEDIATE."""
+    content: bytes
+    mime_type: str
+    duration_ms: int | None = None

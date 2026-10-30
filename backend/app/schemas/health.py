@@ -103,6 +103,8 @@ class DailyTask(DTO):
     waiting_for_meal: bool
     completion: Literal["pending", "completed", "not_taken"]
     checkin_ids: list[str]
+    # A cancelled goal keeps its row for history but no longer counts as open.
+    cancelled: bool = False
 class TaskList(DTO):
     date: date
     items: list[DailyTask]

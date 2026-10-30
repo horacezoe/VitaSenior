@@ -129,7 +129,13 @@ def test_preference_across_conversations_does_not_become_a_pattern(h):
 
 
 def test_existing_stub_is_never_swallowed_as_a_tool_success(h):
-    # Reports are the genuine F1 stub in this harness, not a successful fake.
+    # B's report port is real now, so inject an explicit 501 stub: a failing
+    # dependency must still fail the whole turn, never become a fake success.
+    from dataclasses import replace
+    class StubReports:
+        def daily(self, *args, **kwargs):
+            raise AppError(501, 'MODULE_NOT_IMPLEMENTED', 'reports unavailable in this test')
+    h.agent = type(h.agent)(h.clock, replace(h.agent.services, reports=StubReports()), h.memory)
     with pytest.raises(AppError) as exc:h.turn(body(h,'daily_query'))
     assert exc.value.status==501 and count(h,AgentTurn)==count(h,AgentAction)==0
     turn=h.turn(body(h,'binding_code','binding'))

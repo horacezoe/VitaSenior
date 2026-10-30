@@ -1457,6 +1457,11 @@
       "DailyTask": {
         "additionalProperties": false,
         "properties": {
+          "cancelled": {
+            "default": false,
+            "title": "Cancelled",
+            "type": "boolean"
+          },
           "category": {
             "$ref": "#/components/schemas/Category"
           },

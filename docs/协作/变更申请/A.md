@@ -24,7 +24,7 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
    原因：任务单要求“MEDIA03 允许有效 ticket 单独授权，仍保留 Bearer”；`<audio src>` 无法附加
    Authorization 头，若契约仍写“必须 Bearer”，前端会按契约误判。安全行为未放宽：无凭据仍 401，
    无效/过期/篡改票据一律 404，Bearer 分支仍做归属与绑定校验。
-   快照已重新导出：`6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d`。
+   快照已重新导出：`23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`。
 8. **`change_proposals` 新增 `created_at` 列（A2）**。
    影响：只加一列，不增删表、不改约束；`create_all` 不会给既有库补列，**旧的运行库需重建或手工
    ALTER**（测试/演示库均为新建）。
@@ -33,6 +33,26 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
 9. **`NotificationPort` 增加 `mark_proposal_handled`，`MedicationPort` 增加 `get_plan`（A2）**。
    影响：均为 B 需实现的新桩，当前仍抛 501；A 不读 B 的表。
    原因：A2 应用提案时必须关闭关联通知、并在应用前复核用药计划版本与生成 `before_snapshot`。
+
+## F1 集成批次（B 的七项请求）
+
+10. **未来任务软停用 + 每日目标批次标记（B 申请 1、2）**
+    - `daily_tasks.cancelled_at: UTCDateTime | None`：删时段/停用计划时只置该字段，不删行，
+      已产生的通知与外键、历史分母都保留。新增 `DailyTask.cancelled: bool = False`（默认值，
+      公开 schema 变更）。
+    - 新表 `daily_goal_batches(elder_id, local_date, category, generated_at)`，主键
+      `(elder_id, local_date, category)`：有行表示"该日该类别已生成目标"；无行表示"从未生成"，
+      历史不得用现行计划反推。
+    - 影响：OpenAPI 重新导出为
+      `23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`；表数 18→19，
+      `tests/framework/test_acceptance.py::test_fg04` 的集合断言已同步；旧运行库需重建。
+11. **`MediaPort.assert_owned_voice`（B 申请 9）**
+    亲情录音引用校验：只有上传者本人的 `voice_message` 素材可挂到其发送的提醒上；非本人一律 404
+    （不泄露存在性），用途不符 415。
+12. **`ChangePort.create(..., audio: GeneratedAudio)` + `MediaPort` 的公告音频登记（B 申请 13）**
+    `contracts/media.py` 增加 `GeneratedAudio`；`ChangeService.create` 接收**事务外**渲染好的音频，
+    在写事务内通过 `MediaService.register_announcement` 登记并作为通知的 `audio_asset_id`。
+    `CHANGE01` 路由因此改用无事务的 `Auth` + 两段式 flow（短读鉴权 → 渲染音频 → 短写事务）。
 
 ## 待确认（暂未改公共定义）
 
