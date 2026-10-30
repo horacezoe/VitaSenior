@@ -5,9 +5,25 @@ from app.core.config import Settings
 from app.core.clock import SystemClock, Clock
 from app.core.db import build_engine, sessions, create_tables
 from app.core.uow import UnitOfWork
+from app.contracts.context import Actor
+from app.contracts.bundle import ServiceBundle
+from app.fixtures.history import HISTORY_DAYS, history_template
 from app.models.identity import User, ElderProfile, FamilyBinding
 
 ACCOUNTS = {"elder": "19900000001", "bound_child": "19900000002", "unbound_child": "19900000003", "stranger_elder": "19900000004"}
+
+def import_demo_history(tx, services: ServiceBundle, actor: Actor, elder_id: str, *, demo_id: str, scenario: str = "diabetes_daily") -> None:
+    """The ONE entry A schedules after a matched ONB02.
+
+    Validates the scenario against the fixture, then delegates to the history port
+    (B), which owns daily_tasks/checkins and imports C's memory seed. Runs inside
+    the caller's write tx: medical-plan rows and history commit together, so a
+    failure cannot leave a confirmed profile without its imported plans. B/C do
+    not need their own audience accounts - they only contribute fixture rows.
+    """
+    history_template(scenario)  # raises ValueError on an unknown scenario
+    services.history.import_demo_history(tx, actor, elder_id, demo_id=demo_id, days=HISTORY_DAYS)
+
 def framework_seed(factory, clock: Clock) -> dict:
     result = {}
     with UnitOfWork(factory) as uow:
