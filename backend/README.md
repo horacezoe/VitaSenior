@@ -72,9 +72,21 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 ```powershell
 python -m pytest tests/framework -q
+python -m pytest tests -q                 # 框架 + 各领域业务测试
 python -m app.tools.export_contract --check
 python -m app.tools.check_architecture
 ```
+
+三轮集成验收的联调脚本（临时库、进程内）：
+
+```powershell
+python -m app.tools.integration_smoke            # OK / PENDING / FAIL 三态报告
+python -m app.tools.integration_smoke --strict   # 有 PENDING 也判失败，B/C 端口落地后作为合并闸门
+python -m app.tools.integration_smoke --base-url http://127.0.0.1:8001
+```
+
+`PENDING` 表示该步骤真实返回 501 MODULE_NOT_IMPLEMENTED（依赖端口仍是占位），**不计为成功**；
+`FAIL` 是契约或数据不一致。脚本只用自己的临时 DATA_DIR，不写运行库。
 
 测试强制 tmp_path 数据库、关闭扫描器；FakeClock 推进时间，不等待真实 60 秒。覆盖 FG01–FG10、45 个 P0 operation_id、40 个占位、真实账号/资源权限、持久化登录、唯一约束、失败回滚、并发幂等、契约篡改和跨领域导入注入。没有完成总体计划 AC01–AC14 业务验收。
 

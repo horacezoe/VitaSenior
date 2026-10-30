@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Literal, Annotated
-from pydantic import Field, AwareDatetime, model_validator
+from pydantic import BaseModel, Field, AwareDatetime, field_serializer, model_validator
 from app.schemas.common import DTO
 from app.schemas.enums import Role, ProposalStatus
 from app.schemas.health import MedicationPlanWrite, MedicationPlan, PlanPatch, SettingsPatch, ReminderSettings, Notification, CalendarDay, Records, DailyTask, AttentionItem
@@ -177,6 +177,12 @@ class ChangeProposal(DTO):
     applied_at: AwareDatetime | None
     applied_by: Literal["elder_accept", "timeout"] | None
     conflict_reason: str | None
+    @field_serializer("patch")
+    def _serialize_patch(self, value):
+        # A patch is a *partial* replacement: serialize only the fields that were
+        # actually submitted, otherwise a null-filled dump would re-validate as an
+        # invalid ProfilePatch (only birth_date may be null).
+        return value.model_dump(mode="json", exclude_unset=True) if isinstance(value, BaseModel) else value
 class ChangeDecision(DTO):
     decision: Literal["accept", "reject"]
 class EventResult(DTO):

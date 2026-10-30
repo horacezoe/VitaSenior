@@ -324,7 +324,10 @@ def test_fg10_delivery_artifacts():
     handoff=(backend.parent/'docs'/'协作'/'框架交接记录.md').read_text(encoding='utf-8')
     assert any(s in handoff for s in ['状态：NOT_READY', '状态：F0_READY'])
     assert re.search(r'已验证代码 Git commit：`[0-9a-f]{40}`', handoff)
-    assert hashlib.sha256(DEFAULT_PATH.read_bytes()).hexdigest() in handoff
+    # The live contract hash must be recorded by the current (F1) handoff; the F0
+    # record keeps its own historical hash, so search the whole 协作 folder.
+    recorded = "\n".join(p.read_text(encoding='utf-8') for p in (backend.parent/'docs'/'协作').rglob('*.md'))
+    assert hashlib.sha256(DEFAULT_PATH.read_bytes()).hexdigest() in recorded
     assert (backend/'requirements.lock').is_file()
     readme=(backend/'README.md').read_text(encoding='utf-8')
     for command in ['app.seed','uvicorn','tests/framework','export_contract --check','check_architecture']:

@@ -18,6 +18,11 @@ class Settings:
     session_hours: int = 48
     challenge_seconds: int = 300
     scanner_interval: float = 5.0
+    # Media tickets: short-lived HMAC links so <audio>/<img> can load bytes without
+    # an Authorization header. The default is a demo-only value; set
+    # MEDIA_TICKET_SECRET in any shared/demo deployment.
+    media_ticket_seconds: int = 300
+    media_ticket_secret: str = field(default_factory=lambda: os.getenv("MEDIA_TICKET_SECRET", "dev-only-media-ticket-secret"))
     def __post_init__(self):
         if self.app_env not in {"development", "demo", "test"}:
             raise ValueError("F0 supports development/demo/test environments only")
@@ -29,3 +34,11 @@ class Settings:
             raise ValueError("Web Push is not implemented in F0")
         if self.scanner_interval <= 0:
             raise ValueError("scanner_interval must be positive")
+        if not (30 <= self.media_ticket_seconds <= 3600):
+            raise ValueError("media_ticket_seconds must be within 30..3600")
+        if len(self.media_ticket_secret) < 16:
+            raise ValueError("media_ticket_secret must be at least 16 characters")
+
+    @property
+    def media_dir(self) -> Path:
+        return self.data_dir / "media"

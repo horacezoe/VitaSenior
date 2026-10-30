@@ -41,11 +41,16 @@ def resources(env):
         tx.add(MediaAsset(id='asset', owner_user_id=seed['elder']['user_id'], elder_id=elder, purpose='agent_audio', mime_type='audio/wav', size_bytes=10, relative_path='test.wav', created_at=clock.now()))
         tx.add(MedicationPlan(id='plan', elder_id=elder, name='demo', dose_display='provided', schedule={'mode': 'fixed', 'slots': []}, start_date=date(2026, 10, 30), updated_at=clock.now()))
         tx.add(Checkin(id='checkin', elder_id=elder, type='exercise', local_date=date(2026, 10, 30), occurred_at=clock.now(), payload_json={'activity': 'walk', 'duration_minutes': 20}, created_at=clock.now(), updated_at=clock.now()))
-        tx.add(ChangeProposal(id='proposal', elder_id=elder, created_by=seed['bound_child']['user_id'], target_type='profile', target_id=elder, operation='update', base_version=1, patch={'medical_notes': 'note'}))
+        proposal = ChangeProposal(id='proposal', elder_id=elder, created_by=seed['bound_child']['user_id'], target_type='profile', target_id=elder, operation='update', base_version=1, patch={'medical_notes': 'note'}, created_at=clock.now())
+        tx.add(proposal)
         tx.add(AgentTurn(id='turn', elder_id=elder, actor_user_id=seed['elder']['user_id'], conversation_id='conv', client_turn_id='ct', request_json={}, response_json={}, created_at=clock.now()))
         tx.flush()
         tx.add(Notification(id='notice', elder_id=elder, source_key='fixture-notice', kind='profile_change', title='fixture', text='fixture', due_at=clock.now(), proposal_id='proposal'))
         tx.add(AgentAction(id='action', elder_id=elder, turn_id='turn', type='record_diet', payload_json={}, expires_at=clock.now()))
+        tx.flush()
+        # A real proposal always has its notification: decisions must close it, which
+        # needs B's NotificationPort (still a 501 stub), so CHANGE04 stays unimplemented.
+        proposal.notification_id = 'notice'
         tx.flush()
         u.commit()
     return elder
