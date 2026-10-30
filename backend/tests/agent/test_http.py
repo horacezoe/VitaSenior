@@ -316,23 +316,28 @@ def test_actual_a_proposal_decision_via_resolved_notification(api):
         assert tx.get(ElderProfile,seed['elder']['elder_id']).version==1
 
 
-def test_default_unwired_deployment_stays_501_and_capability_false(tmp_path):
+def test_agent_wiring_guard_and_activation(tmp_path):
+    """Activation is A-owned: without the four app.state attributes C's flows must
+    answer 501, and with them the default deployment reports mock providers."""
+    from app.application.agent_flows import _ready
+    class Bare:
+        pass
+    with pytest.raises(AppError) as exc:
+        _ready(Bare())
+    assert exc.value.status == 501 and exc.value.code == 'MODULE_NOT_IMPLEMENTED'
     clock=FakeClock(datetime(2026,10,30,4,tzinfo=timezone.utc))
-    app=create_app(Settings(data_dir=tmp_path/'unwired',database_url=None,scanner_enabled=False),clock=clock)
+    app=create_app(Settings(data_dir=tmp_path/'wired',database_url=None,scanner_enabled=False),clock=clock)
     with TestClient(app,raise_server_exceptions=False) as client:
+        for name in ('agent','agent_chat','agent_asr','agent_tts'):
+            assert hasattr(app.state,name),name
         seed=framework_seed(app.state.sessions,clock)
         account={'phone':seed['elder']['phone'],'role':'elder'}
         challenge=client.post('/api/v1/auth/code',json=account).json()['data']['challenge_id']
         login=client.post('/api/v1/auth/login',json={**account,'challenge_id':challenge,'code':'123456'})
-        headers={'Authorization':'Bearer '+login.json()['data']['access_token'],'Idempotency-Key':'unwired'}
-        elder=seed['elder']['elder_id']
-        for path,body in [('/ai/tts',{'elder_id':elder,'text':'你好'}),
-                          ('/agent/turns',{'elder_id':elder,'client_turn_id':'u','text':'您好'})]:
-            result=client.post('/api/v1'+path,json=body,headers=headers)
-            assert result.status_code==501,result.text
-        runtime=client.get('/api/v1/runtime',headers=headers)
-        assert runtime.status_code==200,runtime.text
-        assert all(not runtime.json()['data']['capabilities'][key] for key in ['AI01','AI02','AGENT01','AGENT02','MEM01','MEM02','MEM03'])
+        headers={'Authorization':'Bearer '+login.json()['data']['access_token'],'Idempotency-Key':'wired'}
+        runtime=client.get('/api/v1/runtime',headers=headers).json()['data']
+        assert runtime['providers']=={'chat':'mock','asr':'mock','tts':'mock'}
+        assert all(runtime['capabilities'][key] for key in ['AI01','AI02','AGENT01','AGENT02','MEM01','MEM02','MEM03'])
 
 
 def test_agent_cannot_manufacture_player_receipts():

@@ -21,8 +21,9 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     assert declared_capabilities() <= mounted
     assert set(capabilities(mounted)) == mounted
     assert capabilities(mounted)['SYS01'] is True
-    # AGENT01 is the long-lived "still gated" probe: C's HTTP layer is not wired yet.
-    assert capabilities(mounted)['AGENT01'] is False
+    # The gate itself must default to false for anything not declared, without
+    # depending on any team's current progress (stable across all three domains).
+    assert capabilities({'ZZZ99'}) == {'ZZZ99': False}
 
 def test_services_receive_the_application_clock_and_settings(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))

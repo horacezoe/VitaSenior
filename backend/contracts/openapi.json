@@ -5124,7 +5124,11 @@
           },
           "providers": {
             "additionalProperties": {
-              "const": "not_implemented",
+              "enum": [
+                "mock",
+                "real",
+                "not_implemented"
+              ],
               "type": "string"
             },
             "title": "Providers",

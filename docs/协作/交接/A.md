@@ -22,7 +22,7 @@
 | 阶段 | SHA-256 |
 | --- | --- |
 | F0 基线（A0 结束时未变） | `73f9920606bdd8c6338c67327e72adef1ea1a474352aa4c22c949e071ad75657` |
-| A1/A2 结束（当前） | `23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560` |
+| A1/A2 结束（当前） | `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
 
 唯一的契约差异是 MEDIA03 的 security 从 `[{HTTPBearer}]` 变为 `[{HTTPBearer}, {}]`：
 任务单要求“有效 ticket 单独授权，仍保留 Bearer”，而 `<audio src>` 无法附加 Authorization 头，
@@ -226,7 +226,7 @@ import_demo_history(tx, services, actor, elder_id, demo_id=demo_id, scenario="di
 | `python -m pytest tests/identity -q` | `39 passed` |
 | `python -m pytest tests/framework -q` | `70 passed, 42 deselected` |
 | `python -m pytest tests -m f0_stage -q` | `42 skipped`（阶段已关闭，符合设计） |
-| `python -m app.tools.export_contract --check` | `OpenAPI matches 23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560` |
+| `python -m app.tools.export_contract --check` | `OpenAPI matches 4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
 | `python -m app.tools.check_architecture` | `Architecture OK` |
 | `python -m pip check` | `No broken requirements found.` |
 | 真实 uvicorn 冒烟（临时 DATA_DIR、`SCANNER_ENABLED=true`、127.0.0.1:8123） | health/DEMO01（含重放）/AUTH01-02/me/runtime/PROF01/ONB01/BIND01-04/MEDIA01-03（含 ticket 播放真实字节）全部通过；CHANGE01 在 B 未就绪时如实 501；`SMOKE_OK` |
@@ -307,13 +307,36 @@ B 的 `backend/health` = `b1535f8` 已经把我的 A0/A1/A2 全部合入（`72d7
 TTS 在事务外替换该 fixture，事务形状不变。
 
 **契约变化（本次唯一）**：`DailyTask` 增加 `cancelled` 字段，OpenAPI 重新导出为
-`23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`；表数从 18 变 19
+`4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`；表数从 18 变 19
 （`daily_goal_batches`）。`fg04` 的表集合断言已同步。
 
 **当前验证**：`pytest tests -q` → **211 passed, 42 deselected**；`Architecture OK`；
 联调脚本 **21 ok / 8 pending / 0 failed**——`ONB02` 已由 PENDING 转 OK（B 的计划导入 + 历史导入
 经 `history=checkins` 生效），`CHANGE01` 已 OK。剩余 pending：`PLAN02/TASK01/REC01/REPORT01/
 NOTI02`（B 未开启 `health_capabilities`，按他要求由他自己逐项开）、`AGENT01/MEM01`（C 的 HTTP 层）。
+
+### 11.5 C2 激活（A-owned），`integration/f1`
+
+C 的新提交（`7aba5a8`，含 C2 HTTP 与"capabilities 留空待 A 激活"）已合入，唯一冲突在
+`tests/agent/test_agent_service.py`（两边都改成注入失败端口，取 C 的写法并保留本地 `replace`
+导入）。激活由 A 分三步完成：
+
+1. **运行时接线**：`create_app` 现在构造 `app.state.agent`（`AgentService(clock, bundle, memory)`，
+   与 `services.memory` 同一实例）以及 `agent_chat`/`agent_asr`/`agent_tts` 三个 mock provider。
+   C 的 `_ready()` 正是检查这四个属性，缺一个就如实 501。
+2. **放开 `Runtime.providers` 枚举**：`Literal["not_implemented"]` →
+   `Literal["mock","real","not_implemented"]`。mock 是真实可运行的实现、必须能上报；契约 hash 变为
+   `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。
+3. **登记能力**：`agent_capabilities.CAPABILITIES = C2_OPERATIONS`（7 项），`PROVIDERS` 三项为 `mock`。
+
+C 原测试 `test_default_unwired_deployment_stays_501_and_capability_false` 的前提（默认部署未接线）
+已不成立，改写为 `test_agent_wiring_guard_and_activation`：`_ready(Bare())` 必须 501，默认部署必须
+四属性齐全、providers 报 mock、7 项能力为 true。
+
+**实测**：`pytest tests -q` → **229 passed, 42 deselected**；联调 **24 ok / 7 pending / 0 failed**。
+第一轮链路已基本打通：DEMO01 → 建档确认 → 绑定 → 午餐图片 → `AGENT01` 生成待确认动作 →
+`AGENT02` 确认后经 B 的 `CheckinPort` 落成真实打卡；`MEM01` 可读。剩余 7 个 pending 全部是 B 的
+health 接口尚未开启 `health_capabilities`（`PLAN02/TASK01/REC01/REC02/REPORT01/NOTI02/DASH01`）。
 
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 

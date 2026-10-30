@@ -1,4 +1,4 @@
-# A 的变更申请
+﻿# A 的变更申请
 
 本文件记录 A 认为需要集成人修改公共定义（schema/model/contracts/快照）的事项。
 A 本人即本轮集成人，因此已批准的条目在合并时直接列出实际改动与提交。
@@ -24,7 +24,7 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
    原因：任务单要求“MEDIA03 允许有效 ticket 单独授权，仍保留 Bearer”；`<audio src>` 无法附加
    Authorization 头，若契约仍写“必须 Bearer”，前端会按契约误判。安全行为未放宽：无凭据仍 401，
    无效/过期/篡改票据一律 404，Bearer 分支仍做归属与绑定校验。
-   快照已重新导出：`23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`。
+   快照已重新导出：`4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。
 8. **`change_proposals` 新增 `created_at` 列（A2）**。
    影响：只加一列，不增删表、不改约束；`create_all` 不会给既有库补列，**旧的运行库需重建或手工
    ALTER**（测试/演示库均为新建）。
@@ -44,7 +44,7 @@ A 本人即本轮集成人，因此已批准的条目在合并时直接列出实
       `(elder_id, local_date, category)`：有行表示"该日该类别已生成目标"；无行表示"从未生成"，
       历史不得用现行计划反推。
     - 影响：OpenAPI 重新导出为
-      `23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560`；表数 18→19，
+      `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`；表数 18→19，
       `tests/framework/test_acceptance.py::test_fg04` 的集合断言已同步；旧运行库需重建。
 11. **`MediaPort.assert_owned_voice`（B 申请 9）**
     亲情录音引用校验：只有上传者本人的 `voice_message` 素材可挂到其发送的提醒上；非本人一律 404

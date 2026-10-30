@@ -35,7 +35,11 @@ def test_fg01_startup_health_runtime(env, tokens):
     r = client.get('/api/v1/runtime', headers=tokens['elder'])
     assert r.status_code == 200
     data = r.json()['data']
-    assert data['providers'] == {k:'not_implemented' for k in ['chat','asr','tts']}
+    # Providers report the real per-modality status; "not_implemented" is only for a
+    # modality with no provider. The F0 "all not_implemented" snapshot lives in
+    # test_stage_f0.py.
+    assert set(data['providers']) == {'chat', 'asr', 'tts'}
+    assert set(data['providers'].values()) <= {'mock', 'real', 'not_implemented'}
     # Capability truth is owned by the per-domain declaration files; the runtime
     # must render exactly those, and the five F0 operations stay implemented.
     declared = app.state.capabilities_declared
