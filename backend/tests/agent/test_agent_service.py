@@ -129,7 +129,12 @@ def test_preference_across_conversations_does_not_become_a_pattern(h):
 
 
 def test_existing_stub_is_never_swallowed_as_a_tool_success(h):
-    # Reports are the genuine F1 stub in this harness, not a successful fake.
+    # B is now implemented on integration/f1. Inject an explicit missing-port
+    # test double to retain this failure/rollback assertion without freezing B.
+    class MissingReport:
+        def daily(self,*args):
+            raise AppError(501,'MODULE_NOT_IMPLEMENTED','Explicit missing B test port')
+    h.agent.services=replace(h.agent.services,reports=MissingReport())
     with pytest.raises(AppError) as exc:h.turn(body(h,'daily_query'))
     assert exc.value.status==501 and count(h,AgentTurn)==count(h,AgentAction)==0
     turn=h.turn(body(h,'binding_code','binding'))

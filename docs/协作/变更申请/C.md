@@ -80,3 +80,16 @@ B还需落地TaskPort.today/MedicationPort.get_plan、通知handle_event与Check
 C2使用A0 Auth、read_unit/write_unit。ASR/chat/TTS及媒体字节读取均在Session外；写前重新验证实际会话、老人访问、关联通知、档案/记忆版本。所有成功结果与业务/动作/记忆在同一写UoW保存幂等结果，失败不缓存。Agent响应和动作JSON保留exclude_unset=True，避免patch默认null破坏回放。
 
 固定语音只覆盖真实对应文本，含新增“您好”；其他新文本TTS明确501，Agent可保留文字并标tts_unavailable。没有无内容音频、假播放回执或伪造服药。尚不能把固定mock的可用性宣称为任意文本真实TTS。
+
+
+## 最新集成更新：integration/f1 = 21f9bff（本段覆盖前述已解决项）
+
+C 已正常合入 A 的 integration/f1，合并提交38bc09c。A已修复Notification主键DTO差异；B的CheckinService.today/import_demo_history、MedicationService.get_plan、真实打卡/日报/通知原语已存在。本轮测试实际通过C确认→B真实落一条记录→重复确认仍一条→真实B日报读取同一checkin_id，不再把已实现B当占位；缺失port测试改为显式测试替身。
+
+当前公共composition仍将tasks/history接A0占位类，MemoryService仍无参，main仍无C装配，Runtime.providers仍只有not_implemented。按用户要求C没有修改这些文件。请A只改现有memory那一行为MemoryService(clock,access)，复用integration/f1已建立的access/media/B实例，再按前述步骤接C。
+
+新的真实全量失败只有 `tests/framework/test_all_routes.py::test_every_p0_route_matches_its_capability[CHANGE04]`：真实C来源失效接入后accept已经200，但identity_capabilities仍未声明CHANGE04，期望501。最新命令结果 `1 failed, 220 passed, 42 deselected`。C保留该测试及cap清单原样，请A确认完整接受路径后登记，或按实际未完成依赖门禁；不能让C伪造501/吞成功来过测试。
+
+C自己的63项全部通过。真实B目前对C确认写入仍标source=user；C未直接改B表冒充agent_confirmed，来源参数的冻结请求仍有效。C HTTP测试中明确断言当前观察到的值，并将来源差异列为未完成的集成事项，不宣称来源验收已通过。
+
+最新正常部署smoke为 `20 ok / 9 pending / 0 failed`；C的AGENT/MEM仍如实PENDING，CHANGE01已因A/B修复变OK。OpenAPI与架构检查通过，hash仍6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d。

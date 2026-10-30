@@ -35,6 +35,10 @@ def api(tmp_path):
     services=compose(clock,settings)
     memory=MemoryService(clock,services.access)
     services=replace(services,memory=memory)
+    # Real B services, with the same C memory/Clock that production A will wire.
+    services.checkins.memory=memory
+    services.medication.memory=memory
+    services.reports.memory=memory
     services.changes.bind(medication=services.medication,notifications=services.notifications,memory=memory)
     app = create_app(settings, clock=clock, services=services)
     # Explicit integration-test injection until A applies the shared wiring.
@@ -125,6 +129,10 @@ def test_real_profile_port_confirmation_and_replay(api):
 
 def test_unimplemented_b_write_rolls_back_and_cancel_still_works(api):
     app,client,_,_,_=api
+    class MissingCheckins:
+        def create_or_update(self,*args):
+            raise AppError(501,'MODULE_NOT_IMPLEMENTED','Explicit missing B test port')
+    app.state.agent.services=replace(app.state.agent.services,checkins=MissingCheckins())
     result=turn(api)
     assert result.status_code==201,result.text
     action_id=result.json()['data']['actions'][0]['action_id']
@@ -332,3 +340,27 @@ def test_agent_cannot_manufacture_player_receipts():
         AgentService._validate_payload('respond_notification',{
             'notification_id':'n','event':{'event_id':'e','event_type':'playback_completed'}})
     assert exc.value.status==422
+
+
+def test_actual_b_confirmation_writes_once_and_report_uses_same_record(api):
+    from app.models.health import Checkin
+    app,client,clock,seed,_=api
+    prepared=turn(api,'exercise_walk')
+    assert prepared.status_code==201,prepared.text
+    assert count(api,Checkin)==0
+    action=prepared.json()['data']['actions'][0]['action_id']
+    decision=f'/api/v1/agent/actions/{action}/decision'
+    confirmed=client.post(decision,json={'decision':'confirm'},headers=hdr(api,'real-b-confirm'))
+    assert confirmed.status_code==200,confirmed.text
+    assert count(api,Checkin)==1
+    assert client.post(decision,json={'decision':'confirm'},headers=hdr(api,'real-b-repeat')).json()['data']==confirmed.json()['data']
+    assert count(api,Checkin)==1
+    with UnitOfWork(app.state.sessions) as unit:
+        report=app.state.services.reports.daily(unit.session,Actor(seed['elder']['user_id'],Role.elder),
+                                                seed['elder']['elder_id'],clock.now().date())
+        assert report.records.exercise[0].checkin_id==confirmed.json()['data']['result']['checkin_id']
+        assert report.completion.progress.exercise.completed==1
+        unit.commit()
+    # Current frozen B port defaults to user; C must not directly rewrite B's
+    # table to pretend the missing agent_confirmed source argument is wired.
+    assert confirmed.json()['data']['result']['source']=='user'
