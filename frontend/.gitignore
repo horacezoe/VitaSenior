@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+.sites-runtime/
+test-results/
+playwright-report/
+.env.local
+.env
+.env.*
+!.env.example
+.certs/
+*.pem
+*.key
+*.tsbuildinfo

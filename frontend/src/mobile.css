@@ -1,0 +1,141 @@
+/* The home hierarchy stays compact enough for a phone, including the basket. */
+.field > label {
+  font-size: 14px;
+  font-weight: 500;
+}
+.avatar-orb img {
+  object-fit: cover;
+  object-position: center top;
+}
+.large-text .field > label {
+  font-size: 18px;
+}
+.elder-home .home-heading {
+  margin-bottom: 20px;
+}
+.elder-home .greeting h1 {
+  font-size: 26px;
+}
+.companion-hero {
+  margin: 18px 0 10px;
+  padding: 16px 19px;
+}
+.companion-hero .avatar-orb {
+  width: 110px;
+  margin: 10px auto 8px;
+}
+.companion-hero .orb-inner svg {
+  width: 35px;
+  height: 35px;
+}
+.companion-hero .orb-inner span {
+  font-size: 15px;
+}
+.companion-copy h2 {
+  font-size: 23px;
+  line-height: 1.4;
+}
+.companion-copy p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 6px 0 13px;
+}
+.call-entry {
+  padding: 12px 14px;
+  min-height: 65px;
+}
+.call-entry-icon {
+  height: 37px;
+  width: 37px;
+}
+.health-shortcut {
+  padding: 12px 5px;
+}
+.egg-garden {
+  margin-top: 8px;
+  min-height: 120px;
+}
+.elder-home .home-footer {
+  margin-top: 14px;
+}
+.notice-banner {
+  padding: 12px;
+  margin: 10px 0;
+}
+.notice-banner strong {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.notice-banner small {
+  font-size: 10px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.confirm-dialog {
+  border: 0;
+  border-radius: 25px;
+  padding: 26px;
+  width: min(420px, calc(100% - 34px));
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: 0 22px 80px #14332b3d;
+}
+.confirm-dialog::backdrop {
+  background: #203e3859;
+  backdrop-filter: blur(4px);
+}
+.confirm-dialog h2 {
+  font-size: 23px;
+  margin-bottom: 15px;
+}
+.confirm-dialog > div {
+  font-size: 15px;
+  line-height: 1.9;
+}
+.confirm-dialog .form-actions {
+  margin-top: 25px;
+}
+.large-text .menu-link strong,
+.large-text .record-copy strong {
+  font-size: 19px;
+}
+.large-text .field > span,
+.large-text .note-card,
+.large-text .button {
+  font-size: 18px;
+}
+.large-text .field input,
+.large-text .field textarea,
+.large-text .field select {
+  font-size: 20px;
+}
+.large-text .field small,
+.large-text .form-hint,
+.large-text .record-copy small {
+  font-size: 14px;
+}
+.call-pending {
+  font-size: 11px;
+  color: #fff6d6;
+  margin-top: 8px;
+}
+@media (max-height: 780px) {
+  .elder-home .home-heading {
+    margin-bottom: 14px;
+  }
+  .elder-home .greeting h1 {
+    font-size: 24px;
+  }
+  .companion-hero .avatar-orb {
+    width: 92px;
+  }
+  .companion-hero .hero-badge {
+    padding: 4px 10px;
+  }
+  .companion-copy p {
+    font-size: 11px;
+  }
+  .elder-home {
+    padding-top: 20px;
+  }
+}
