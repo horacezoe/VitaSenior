@@ -13,11 +13,9 @@ from app.core.ids import new_id
 from app.core.idempotency import Idempotency
 from app.core.ratelimit import RateLimiter
 from app.core.uow import UnitOfWork
-from app.composition import compose, compose_identity, declared_capabilities, providers
+from app.composition import build_agent_providers, compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
-from app.providers.mock_audio import MockASR, MockTTS
-from app.providers.mock_chat import MockUnderstanding
 from app.services.agent_service import AgentService
 from app.schemas.common import Envelope, ErrorEnvelope, ErrorDetail, Meta
 from app.routers import system, auth, identity, health, agent
@@ -49,17 +47,14 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
     # The only place capability/provider declarations are read; routers/system.py
     # just renders them so the three developers never edit one shared list.
     app.state.capabilities_declared = declared_capabilities()
-    app.state.providers = providers()
+    app.state.providers = providers(settings)
     app.state.identity = compose_identity(clock)
     app.state.idempotency = Idempotency(clock)
     # C2 activation is A-owned: these four attributes are exactly what C's flows
-    # check before running (see app/application/agent_flows.py::_ready). The agent
-    # service shares the same memory instance and the same ServiceBundle, and the
-    # providers are mock-only while Settings forbids real providers.
+    # check before running (see app/application/agent_flows.py::_ready). chat/ASR
+    # stay mock; TTS is the only provider F2 may switch to a real implementation.
     app.state.agent = AgentService(clock, app.state.services, app.state.services.memory)
-    app.state.agent_chat = MockUnderstanding()
-    app.state.agent_asr = MockASR()
-    app.state.agent_tts = MockTTS()
+    app.state.agent_chat, app.state.agent_asr, app.state.agent_tts = build_agent_providers(settings)
     def settle_due_proposals(now):
         """One tick, one transaction: B's deterministic reminder scan creates the due
         notifications, then A settles expired proposal windows from SQLite. Both run

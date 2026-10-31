@@ -75,6 +75,16 @@ F1 没有迁移工具，`create_all` 只建缺失的表、**不会给旧表加�
 所以演示机一律**从空数据目录开始**：
 
 ```powershell
+.\run-demo.ps1                 # 读 backend/.env，起在 8000
+.\run-demo.ps1 -Port 8010      # 换端口
+```
+
+`backend/.env` 是本机密钥文件（**已 gitignore，绝不会进仓库**），`run-demo.ps1` 会把它导出成
+进程环境变量再启动 uvicorn。应用本身**不会**自动读 `.env`——否则本地密钥会污染 pytest 的确定性。
+
+没有 `.env` 时也可以手工设变量：
+
+```powershell
 $env:DATA_DIR = 'D:/vitasenior-demo'      # 换一个新目录，或先整个删掉旧目录
 $env:MEDIA_TICKET_SECRET = '<至少16位随机串>'   # 媒体链接签名密钥，别用示例值
 $env:SCANNER_ENABLED = 'true'             # 需要自动到期结算时打开

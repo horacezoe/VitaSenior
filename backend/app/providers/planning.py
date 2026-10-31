@@ -22,6 +22,14 @@ def request_digest(body: AgentTurnWrite) -> str:
 
 
 @dataclass(frozen=True)
+class ImageInput:
+    """Authorized immutable bytes; no path, media ticket, token or ORM object."""
+    asset_id: str
+    mime_type: str
+    content: bytes
+
+
+@dataclass(frozen=True)
 class Snapshot:
     elder_id: str
     now: datetime
@@ -31,6 +39,7 @@ class Snapshot:
     medication_slots: dict[str, str] = field(default_factory=dict)
     pending_action_ids: tuple[str, ...] = ()
     proposal_id: str | None = None
+    images: tuple[ImageInput, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,7 @@ class Plan:
     decision_action_id: str | None = None
     transcript: str | None = None
     asr_provider: str = "not_used"
+    chat_provider: str = "mock"
 
 
 class UnderstandingProvider(Protocol):

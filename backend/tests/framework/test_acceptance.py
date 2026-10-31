@@ -301,7 +301,8 @@ def test_ports_are_replaceable(env):
 
 def test_config_rejects_unimplemented_providers_and_push(tmp_path):
     from app.core.config import Settings
-    with pytest.raises(ValueError, match='real providers'):
+    # Real understanding is allowed in F2 but must be configured, never silent.
+    with pytest.raises(ValueError, match='CHAT_PROVIDER=real requires'):
         Settings(data_dir=tmp_path, chat_provider='real')
     with pytest.raises(ValueError, match='Web Push'):
         Settings(data_dir=tmp_path, web_push_enabled=True)

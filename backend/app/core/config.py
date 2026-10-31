@@ -11,8 +11,21 @@ class Settings:
     public_base_url: str = field(default_factory=lambda: os.getenv("PUBLIC_BASE_URL", "http://localhost:8000"))
     app_timezone: str = field(default_factory=lambda: os.getenv("APP_TIMEZONE", "Asia/Hong_Kong"))
     chat_provider: str = field(default_factory=lambda: os.getenv("CHAT_PROVIDER", "mock"))
+    # Real understanding (C's adapter). Empty by default so a normal start stays
+    # mock; CHAT_PROVIDER=real refuses to boot unless all three are set.
+    chat_api_key: str = field(default_factory=lambda: os.getenv("CHAT_API_KEY", ""))
+    chat_base_url: str = field(default_factory=lambda: os.getenv("CHAT_BASE_URL", ""))
+    chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", ""))
+    chat_timeout_seconds: float = 20.0
     asr_provider: str = field(default_factory=lambda: os.getenv("ASR_PROVIDER", "mock"))
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "mock"))
+    # Real speech (B's adapter). Same policy as chat: empty by default, and
+    # TTS_PROVIDER=real refuses to boot unless the three connection fields are set.
+    tts_api_key: str = field(default_factory=lambda: os.getenv("TTS_API_KEY", ""))
+    tts_base_url: str = field(default_factory=lambda: os.getenv("TTS_BASE_URL", ""))
+    tts_model: str = field(default_factory=lambda: os.getenv("TTS_MODEL", ""))
+    tts_voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", ""))
+    tts_timeout_seconds: float = 20.0
     web_push_enabled: bool = field(default_factory=lambda: os.getenv("WEB_PUSH_ENABLED", "false").lower() == "true")
     database_url: str | None = field(default_factory=lambda: os.getenv("DATABASE_URL") or None)
     session_hours: int = 48
@@ -28,8 +41,16 @@ class Settings:
             raise ValueError("F0 supports development/demo/test environments only")
         if self.app_timezone != "Asia/Hong_Kong":
             raise ValueError("Business timezone is frozen to Asia/Hong_Kong")
-        if any(p != "mock" for p in (self.chat_provider, self.asr_provider, self.tts_provider)):
-            raise ValueError("F0 has no real providers; use mock (business routes still return 501)")
+        if self.asr_provider != "mock":
+            raise ValueError("F2 allows real providers for chat/TTS only; ASR must stay mock")
+        if self.chat_provider not in {"mock", "real"}:
+            raise ValueError("CHAT_PROVIDER must be 'mock' or 'real'")
+        if self.chat_provider == "real" and not all((self.chat_api_key, self.chat_base_url, self.chat_model)):
+            raise ValueError("CHAT_PROVIDER=real requires CHAT_API_KEY, CHAT_BASE_URL and CHAT_MODEL")
+        if self.tts_provider not in {"mock", "real"}:
+            raise ValueError("TTS_PROVIDER must be 'mock' or 'real'")
+        if self.tts_provider == "real" and not all((self.tts_api_key, self.tts_base_url, self.tts_model)):
+            raise ValueError("TTS_PROVIDER=real requires TTS_API_KEY, TTS_BASE_URL and TTS_MODEL")
         if self.web_push_enabled:
             raise ValueError("Web Push is not implemented in F0")
         if self.scanner_interval <= 0:

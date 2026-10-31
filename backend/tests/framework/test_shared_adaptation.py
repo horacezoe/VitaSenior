@@ -29,7 +29,8 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     for module in (identity_capabilities, health_capabilities, agent_capabilities):
         assert isinstance(module.CAPABILITIES, frozenset)
     assert declared_capabilities() == identity_capabilities.CAPABILITIES | health_capabilities.CAPABILITIES | agent_capabilities.CAPABILITIES
-    assert providers() == agent_capabilities.PROVIDERS
+    # Provider status is derived from the settings that actually built them.
+    assert providers(Settings(tts_provider="mock")) == {"chat": "mock", "asr": "mock", "tts": "mock"}
     mounted = {(op['operationId']) for item in app.openapi()['paths'].values() for m, op in item.items() if m in {'get', 'post', 'put', 'delete'}}
     assert declared_capabilities() <= mounted
     assert set(capabilities(mounted)) == mounted
@@ -37,6 +38,35 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     # The gate itself must default to false for anything not declared, without
     # depending on any team's current progress (stable across all three domains).
     assert capabilities({'ZZZ99'}) == {'ZZZ99': False}
+
+def test_provider_factory_separates_mock_and_real(tmp_path):
+    """F2 seam: understanding and TTS each switch independently; ASR stays mock."""
+    from app.composition import build_agent_providers
+    from app.providers.mock_audio import MockTTS
+    from app.providers.mock_chat import MockUnderstanding
+    mock = Settings(data_dir=tmp_path)
+    chat, asr, tts = build_agent_providers(mock)
+    assert isinstance(chat, MockUnderstanding) and isinstance(tts, MockTTS)
+    assert providers(mock) == {"chat": "mock", "asr": "mock", "tts": "mock"}
+    # Real understanding needs explicit credentials, never silently halves.
+    with pytest.raises(ValueError, match="CHAT_PROVIDER=real requires"):
+        Settings(data_dir=tmp_path, chat_provider="real")
+    real = Settings(data_dir=tmp_path, chat_provider="real", chat_api_key="test-key",
+                    chat_base_url="https://example.invalid/v1", chat_model="test-model")
+    real_chat, _, _ = build_agent_providers(real)
+    assert type(real_chat).__name__ == "RealUnderstanding"
+    assert providers(real)["chat"] == "real"
+    # ASR is deferred this round; declaring it real is rejected.
+    with pytest.raises(ValueError, match="ASR must stay mock"):
+        Settings(data_dir=tmp_path, asr_provider="real")
+    # A real TTS must refuse to fake it while B's module is absent.
+    with pytest.raises(RuntimeError, match="real_tts.py"):
+        build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real", tts_api_key="k",
+                                       tts_base_url="https://example.invalid/v1", tts_model="m"))
+    with pytest.raises(ValueError, match="TTS_PROVIDER=real requires"):
+        Settings(data_dir=tmp_path, tts_provider="real")
+    with pytest.raises(ValueError, match="TTS_PROVIDER"):
+        Settings(data_dir=tmp_path, tts_provider="bogus")
 
 def test_services_receive_the_application_clock_and_settings(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))
