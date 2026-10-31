@@ -1,6 +1,33 @@
 # F2 B：MiMo TTS 握手与验收
 
-2026-10-31（Asia/Hong_Kong）。**已正常同步并核验 A 的 f2-demo-v4：chat/ASR/TTS 三模态生产装配均已完成，后端音频部分已收口；剩正式 Edge 界面的采集、句末截图和播放联调。** TTS 已有用户实听，ASR 已有 B 独立 WAV 与 A 正常 Uvicorn/AI01 的真实探测；Edge 实际采集尚未验收。三个模态统一 MiMo，无新增转码或依赖。
+2026-10-31（Asia/Hong_Kong）。**A 的 f2-demo-v4 已完成 chat/ASR/TTS 三模态工厂装配，B 的真实音频适配器已验证；完整多意图 Agent 工作流尚未完成，不能据此宣称只剩前端。** TTS 已有用户实听，ASR 已有 B 独立 WAV 与 A 正常 Uvicorn/AI01 的真实探测；Edge 实际采集尚未验收。三个模态统一 MiMo，无新增转码或依赖。下节为用户最新要求和重新核实的边界，优先于后文历史交付口径。
+
+## 用户最新要求与业务闭环核查
+
+用户明确：正常演示使用 MiMo 真实 ASR、理解模型和 TTS；预设关怀和历史种子可以是演示素材，但业务写入、发送、播放回执、历史保存和回看必须真实执行。模型可用不等于所有意图、上下文续接和业务接线已经完成。原任务中“本轮提案不要求真实 TTS”的阶段边界不能继续用来解释用户此次提出的完整产品要求；此项应纳入 A/C 下一批接线，B 不越过共享文件白名单自行修改状态机。
+
+### 本次实际完成
+
+- 重新同步远端跟踪引用后，A 仍为 `582e304`，C 仍为 `bb37744`，未发现更新的多意图实现。
+- B 本机被忽略的 `backend/.env` 已由旧的三项 mock 改为 `CHAT_PROVIDER=real / ASR_PROVIDER=real / TTS_PROVIDER=real`，补齐 ASR 官方地址与 `mimo-v2.5-asr`，按用户同一 MiMo 账号约定复用本机 key；未输出或提交密钥。原独立 DATA_DIR、数据库和端口保留。
+- 显式将该文件导入本次子进程，正常 `Settings` / `build_agent_providers` 构建通过：三个实际对象均 `name=real / is_mock=False`，输出 `B_LOCAL_REAL_FACTORY_OK`。`git check-ignore .env` 通过。构建未发供应商请求、未启动应用或改动运行库，也没有重启已有服务；应用仍不会自动读取 .env，运行实例必须在加载该配置后重启，并以 `/runtime.providers` 为准。
+- 免费回归实际运行：`python -X utf8 -m pytest tests/health/test_activation.py::test_records_correction_cancel_and_three_views_persist tests/health/test_activation.py::test_family_voice_priority_shared_copy_repeats_and_no_taken tests/health/test_activation.py::test_family_fixed_speech_exact_fixture_integrity tests/health/test_activation.py::test_family_ownership_permissions_and_text_fallback tests/health/test_history.py tests/health/test_http.py::test_http_same_meal_replay_conflict_and_child_report tests/agent/test_http.py::test_actual_b_confirmation_writes_once_and_report_uses_same_record -q --tb=short --basetemp=.pytest_cache/b-real-workflow-audit` → **11 passed / 1 既有 warning / 7.04s**。子进程显式使用 mock provider 与临时 SQLite；验证的是实际业务服务/端口/HTTP/数据库，并非真实模型或 Edge 设备。本次未重复付费探测。
+
+### 当前事实与接下来的责任范围
+
+| 项目 | 已有实现 | 仍需完成 / 负责方 |
+| --- | --- | --- |
+| 真实 ASR/TTS | MiMo 适配器、正常 AI01/AI02 装配、来源校验和失败降级已通。默认测试保留 HTTP 替身，真实失败不会偷偷回退固定答案。 | B 配合正式 Edge PCM WAV 收音、句末截图、播放与回执验收；尚无实际麦克风采样证据。 |
+| 意图识别与执行 | C 的真实 `RealUnderstanding` 目前只输出 diet/clarify/unsupported；饮食候选经确认真实落库。已有通用执行端口覆盖更多动作。 | C 补真实多意图路由及对应子流程、参数澄清续接、确认/取消/更正；不能仅增加模型提示词后便宣称闭环。A 统一必要的共享状态/契约。 |
+| 语音确认 | 当前只识别少量精确文本，且条件要求没有图片。 | C 优先修复“确认。”等标点及自动附带摄像头截图的确认：先解析已属当前会话的待确认动作，再处理新业务意图，避免语音闭环再次走饮食提取。多轮澄清目前也没有保存未完成候选供下一句补齐。 |
+| 家人关怀 | 预设全文音频或子女上传录音能实际保存、通知老人、取回播放、上报回执；重复播放不等于服药/运动打卡。任意新文字目前可发送，但没有动态 TTS。 | 预设素材可按用户要求继续使用；前端走实际通知/播放/回执。若支持任意文字语音，A/B 接既有 TTSProvider，并保留文字降级。 |
+| 历史与回看 | 14 天历史标记 demo_seed；后续实际新增、修改、取消、分页查询、日历、日报和家庭看板走真实 SQLite；确认动作幂等，不重复新增。上述 11 项含相关验证。 | 前端接真实查询接口并验证重启后回看，不把展示样例当成新记录；不重新清库或覆盖用户数据。 |
+| 修改提案播报 | 指子女申请修改老人档案、提醒设置或用药计划后，向老人读出具体完整改动；真实提案/决定状态机已实现。当前 `identity_flows.create_change` 仍显式构造 `ProposalFixtureTTS()`，因此全局 TTS=real 不会自动覆盖该路径。 | A 接已有配置的 TTSProvider；C/A 对齐真实模式全文标记（当前文案带【模拟】）。外部调用放写事务外，保持原文一致和媒体登记；失败保留全文、无完整音频不启动 60 秒窗口。B 提供适配器验证，不重写状态机。 |
+| 看板来源标识 | 看板实际统计来自数据库。 | A 处理 `Dashboard.provider_mode` schema/service 写死 mock 的历史字段，避免把真实统计误标；不能只改标签掩盖上述路由缺口。 |
+
+验收顺序：先补真实意图和语音确认/澄清续接，再接提案 TTS，然后从正式 Edge 界面执行“说话→ASR→句末截图+文字→意图→业务子流程→明确确认→实际保存→最终文字 TTS→历史回看”。缺口未完成前不得把所有意图表述为可用。
+
+提案全文可能超过 B 当前单次 200 字保护上限；不能简单截断。接线验收需覆盖全文超限时明确文字降级，或另行实现并验证完整分段合成/拼接；无完整音频时不能启动自动生效窗口。该要求不是新增模型或媒体库的理由。
 
 ## 基线与协作进度
 
@@ -39,11 +66,11 @@ TTS_VOICE=冰糖
 
 JSON 最多 20 MiB+64 KiB，解码音频最多 15 MiB/120 秒；严格 Base64、单 choice、finish_reason=stop，校验完整 RIFF/chunk/24kHz/16-bit PCM/帧长并拒绝空、全零静音、截断。MiMo 真实响应的 transcript=null 表示没有独立转写，现已兼容；若提供非 null transcript，仍必须与全文一致。Speech.text 始终保留入参。容器完整不能证明逐字读全和音质，仍需人工实听。上游超时 504，其他供应商失败/无效音频 502；错误不公开 key、供应商响应体或输入文字。
 
-提案仍用 F1 精确全文 fixture，未改提案状态机或 60 秒窗口；播放不形成 taken。
+此处为已发布版本的状态：提案仍用 F1 精确全文 fixture，未改提案状态机或 60 秒窗口；播放不形成 taken。用户最新提出的提案真实 TTS 接线缺口见本文首节。
 
 ## 本机 env 与真实探针
 
-`backend/.env.mimo.example` 已从 C/A 正常合入。B 在自己的 worktree 创建了被忽略的 `backend/.env`，改用 B 的独立数据/端口并补 TTS_*；用户将 MiMo key 填入 CHAT_API_KEY 后，B 按统一账号约定仅在本机将同一个 key 复用到 TTS_API_KEY。密钥未进入代码、命令参数、输出或 Git。`git check-ignore backend/.env` 实际通过。chat=mock 是示例/本探针的配置选择，不表示真实 chat 未实现；本探针只启用真实 TTS，不重复调用 C 的真实理解。
+`backend/.env.mimo.example` 已从 C/A 正常合入。B 在自己的 worktree 创建了被忽略的 `backend/.env`，改用 B 的独立数据/端口并补 TTS_*；用户将 MiMo key 填入 CHAT_API_KEY 后，B 按统一账号约定在本机将同一个 key 复用到 TTS_API_KEY、后续再补 ASR_API_KEY。密钥未进入代码、命令参数、输出或 Git。`git check-ignore backend/.env` 实际通过。早期本机文件保留三项 mock 是独立探测阶段的配置，不是当前产品目标；现已按本文首节改为三项 real。独立 TTS 探针仍只启用真实 TTS，不重复调用 C 的真实理解。
 
 独立探针不被 pytest 收集；显式读 TTS_*，忽略文件里的数据库地址、DATA_DIR 和 chat 选择，始终用自己的临时数据库、真实默认工厂/登录/Runtime/AI02/票据 MEDIA03。仅一次供应商请求，无重试，不调用真实 chat：
 
@@ -88,8 +115,8 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 
 1. TTS 和 ASR 的旧阶段断言均已由 A 更新；B 未修改公共测试。真实 ASR 已正常装配，历史 1 failed 和 ASR 配置阻断均已关闭。
 2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
-3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；下一步仅做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。
-4. A 的三模态后端集成已完成；下一项是正式前端完成一句一轮的音视频采集、图文 Agent 与播报联调。C 现有真实饮食流程继续复用。
+3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；B 继续做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。此为音频适配器范围，不能推断其他 Agent 子流程已经完成。
+4. A 的三模态工厂集成已完成；正式前端的一句一轮音视频采集、图文 Agent 与播报仍待联调，同时 C/A 需补本文首节所列多意图及提案接线。C 现有真实饮食流程继续复用。
 
 ### B 对 f2-demo-v4 的独立核验
 
