@@ -1,15 +1,19 @@
 :root {
   font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   font-synthesis: none;
-  color: #203d38;
-  background: #e9eeea;
-  --accent: #247c69;
-  --accent-dark: #185a4e;
-  --soft: #e9f4ee;
-  --paper: #fafcf9;
-  --text: #203d38;
-  --muted: #71847b;
-  --line: #e1e9e3;
+  color: #233f3c;
+  background: #e5ede8;
+  --accent: #1b7064;
+  --accent-dark: #14564d;
+  --soft: #e8f2ec;
+  --paper: #f6f9f6;
+  --text: #233f3c;
+  --muted: #60756e;
+  --line: #dce7e0;
+  --surface: #ffffff;
+  --surface-shadow: 0 4px 18px #244b3b06;
+  --accent-shadow: #14564d24;
+  --focus: #286ba5;
   --app-height: 100dvh;
   line-height: 1.6;
   font-weight: 400;
@@ -55,7 +59,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid #4384b5;
+  outline: 3px solid var(--focus);
   outline-offset: 4px;
 }
 h1,
@@ -68,7 +72,7 @@ h1,
 h2,
 h3 {
   font-weight: 600;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.025em;
 }
 img {
   max-width: 100%;
@@ -91,13 +95,15 @@ small {
   font-size: 18px;
 }
 .theme-child {
-  --accent: #997136;
-  --accent-dark: #6f4e24;
-  --soft: #fbf0d9;
-  --paper: #fdfcf7;
-  --text: #463e2b;
-  --muted: #8c816c;
-  --line: #ece6d8;
+  --accent: #8a631f;
+  --accent-dark: #684815;
+  --soft: #f8efd9;
+  --paper: #fbf9f2;
+  --text: #493f2b;
+  --muted: #786a4e;
+  --line: #e9e1d0;
+  --surface-shadow: 0 4px 18px #75562006;
+  --accent-shadow: #68481524;
   color: var(--text);
 }
 .page {

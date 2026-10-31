@@ -28,7 +28,7 @@ export function logNode(
   };
   entries.push(e);
   if (entries.length > 200) entries.shift();
-  console.info("[VitaSenior workflow]", e);
+  console.info("[YinLink workflow]", e);
 }
 export function exportDiagnostics() {
   const url = URL.createObjectURL(
@@ -36,7 +36,7 @@ export function exportDiagnostics() {
   );
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vitasenior-workflow.json";
+  a.download = "yinlink-workflow.json";
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

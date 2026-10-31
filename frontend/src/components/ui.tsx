@@ -57,7 +57,7 @@ export function Brand({ small = false }: { small?: boolean }) {
         <Leaf size={20} strokeWidth={1.7} />
       </span>
       <span>
-        银龄<small>VITA SENIOR</small>
+        银龄<small>YinLink</small>
       </span>
     </div>
   );
