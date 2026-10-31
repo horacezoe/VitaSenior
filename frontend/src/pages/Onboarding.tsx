@@ -39,14 +39,16 @@ export default function Onboarding() {
       navigate("/elder", { replace: true });
       return;
     }
-    setEditor({ scope, current, draft, profile: draft.profile_draft, plans: draft.medication_plan_drafts });
+    setEditor({ scope, current, draft, profile: draft.match_status === "not_found"
+      ? { ...draft.profile_draft, display_name: "" } : draft.profile_draft,
+      plans: draft.medication_plan_drafts });
   }, [initial.data, scope, navigate]);
 
   const manual = () => action.run(async (writeKeys) => {
     const current = active?.current || await api.get<Schemas["Profile"]>(elderPath(elderId!, "profile"));
     const path = elderPath(elderId!, "onboarding/match"), body = { mode: "manual" };
     const draft = await api.post<Schemas["MatchResult"]>(path, body, writeKeys.for(path, body));
-    setEditor({ scope, current, draft, profile: draft.profile_draft, plans: [] });
+    setEditor({ scope, current, draft, profile: { ...draft.profile_draft, display_name: "" }, plans: [] });
   });
   const confirm = () => action.run(async (writeKeys) => {
     if (!active) return;
@@ -65,7 +67,7 @@ export default function Onboarding() {
     setEditor((value) => value?.scope === scope ? { ...value, ...change } : value);
 
   return (
-    <Page title={active ? "一起核对您的信息" : "正在查询社区档案"}
+    <Page title={active ? (active.draft.match_status === "not_found" ? "请填写您的档案" : "一起核对您的信息") : "正在查询社区档案"}
       subtitle="确认后才会保存为正式档案" back="/settings">
       {!active ? (
         <Card>

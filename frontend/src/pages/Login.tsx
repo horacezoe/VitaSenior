@@ -54,11 +54,11 @@ export default function Login() {
     <main className="login-page">
       <div className="login-top">
         <Brand />
-        <span className="small-label">日常有陪伴 · 家人更安心</span>
+        <span className="small-label">你自在，我安心</span>
       </div>
       <section className="login-intro">
         <Avatar />
-        <span className="eyebrow">把简单，还给生活</span>
+        <span className="eyebrow">你自在，我安心</span>
         <h1>
           你好，
           <br />
@@ -148,7 +148,7 @@ export default function Login() {
         </form>
       </section>
       <footer className="login-footer">
-        <span>银龄有伴，日常心安</span>
+        <span>你自在，我安心</span>
 
       </footer>
     </main>

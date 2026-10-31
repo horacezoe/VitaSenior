@@ -1,6 +1,7 @@
 import secrets
 from datetime import timedelta
 from sqlalchemy import select, func
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 from app.models.identity import User, AuthChallenge, AuthSession, ElderProfile, FamilyBinding, CommunityRecord, DemoIdentity
 from app.core.clock import Clock, local_date
@@ -25,9 +26,16 @@ class IdentityService:
         self.clock = clock
 
     def issue_challenge(self, tx: Session, payload: CodeRequest) -> CodeResponse:
-        user = tx.scalar(select(User).where(User.phone == payload.phone, User.role == payload.role.value))
+        user = tx.scalar(select(User).where(User.phone == payload.phone))
         if not user:
-            raise AppError(401, "LOGIN_CODE_INVALID", "Only allocated demo accounts may log in")
+            # Challenge rows need an account, but no profile or session is created
+            # until verification succeeds. Repeated requests share the same account.
+            tx.execute(insert(User).values(phone=payload.phone, role=payload.role.value,
+                                           demo_id=new_id("signup"))
+                       .on_conflict_do_nothing(index_elements=[User.phone]))
+            user = tx.scalar(select(User).where(User.phone == payload.phone))
+        if user.role != payload.role.value:
+            raise AppError(401, "LOGIN_CODE_INVALID", "Phone is registered with another role")
         count = tx.scalar(select(func.count()).select_from(AuthChallenge).where(AuthChallenge.user_id == user.id, AuthChallenge.created_at > self.clock.now() - timedelta(minutes=5)))
         if count >= 5:
             raise AppError(429, "RATE_LIMITED", "Too many challenges", retryable=True)
@@ -45,6 +53,19 @@ class IdentityService:
             raise AppError(401, "CHALLENGE_EXPIRED", "Challenge expired or consumed")
         if payload.code != "123456":
             raise AppError(401, "LOGIN_CODE_INVALID", "Invalid demo code")
+        if user.role == "elder" and user.demo_id.startswith("signup_"):
+            # An unrecognized account starts with no community identity or health
+            # facts. Existing confirmed profiles survive every subsequent login.
+            tx.execute(insert(ElderProfile).values(
+                owner_user_id=user.id,
+                profile_json={**EMPTY_DRAFT, "source": "community_mock"},
+                reminder_settings_json=default_reminder_settings(),
+                onboarding_status="draft", version=1, updated_at=self.clock.now(),
+            ).on_conflict_do_nothing(index_elements=[ElderProfile.owner_user_id]))
+            tx.execute(insert(DemoIdentity).values(
+                user_id=user.id, demo_id=user.demo_id, phone=user.phone,
+                community_record_id=None,
+            ).on_conflict_do_nothing(index_elements=[DemoIdentity.user_id]))
         token = secrets.token_urlsafe(32)
         expires_at = self.clock.now() + timedelta(hours=48)
         challenge.consumed_at = self.clock.now()

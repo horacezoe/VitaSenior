@@ -59,7 +59,7 @@ function MobileApp() {
   }, []);
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
-    document.title = "银龄 · 小银龄陪你每一天";
+    document.title = "银龄 · 你自在，我安心";
   }, [location.pathname]);
   return (
     <div className={`app-shell theme-${role}${large ? " large-text" : ""}`}>

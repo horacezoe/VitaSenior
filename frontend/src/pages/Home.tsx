@@ -131,7 +131,7 @@ export function ElderHome() {
       <EggBasket />
       <footer className="home-footer">
         <ShieldCheck size={14} />
-        <span>用心陪伴，安心记录</span>
+        <span>你自在，我安心</span>
       </footer>
     </main>
   );
@@ -195,9 +195,9 @@ export function ChildHome() {
             <Heart size={54} strokeWidth={1.1} />
           </span>
           <h2>
-            多一份了解
+            你自在，
             <br />
-            少一些牵挂
+            我安心
           </h2>
           <p>
             输入家人分享的四位绑定码，
@@ -237,7 +237,7 @@ export function ChildHome() {
         </Link>
       </header>
       <div className="child-title">
-        <span className="eyebrow">把安心，送给彼此</span>
+        <span className="eyebrow">你自在，我安心</span>
         <h1>
           家人的日常，
           <br />

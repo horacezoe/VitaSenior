@@ -101,7 +101,7 @@ def test_fg03_sessions_and_real_access(env, tokens):
 def test_fg03_challenge_ownership_expiry_and_limits(env):
     app, client, clock, seed = env
     account={k:seed['elder'][k] for k in ['phone','role']}
-    assert client.post('/api/v1/auth/code',json={'phone':'13800000000','role':'elder'}).status_code==401
+    assert client.post('/api/v1/auth/code',json={'phone':'13800000000','role':'elder'}).status_code==200
     challenge=client.post('/api/v1/auth/code',json=account).json()['data']['challenge_id']
     body={**account,'challenge_id':challenge,'code':'000000'}
     assert client.post('/api/v1/auth/login',json=body).status_code==401
