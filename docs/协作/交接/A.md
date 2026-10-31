@@ -407,6 +407,22 @@ B 在 `c1fe1d6` 里实现了可信来源（`CheckinService.create_or_update(...,
 仍未做（不属于 P0 闭环）：P1 的 `AUTH03/BIND05/PLAN04/CHANGE05/MEM04/PUSH01–03`、
 真实模型/ASR/TTS、手机 HTTPS 与真实 `<audio>` 播放、前端界面、AC01–AC14 的三人端到端演练。
 
+### 11.9 演示机就绪（P0 之外的收尾）
+
+前端与真机演示推后进行，因此先把"演示当场不会崩"这件事做掉：
+
+- **旧库守卫**：`app/core/db.py::assert_schema_current` 在启动时对比实际列与模型列。F1 没有迁移
+  工具、`create_all` 不会给旧表加列，旧 `DATA_DIR` 现在会以
+  `DATABASE_SCHEMA_OUTDATED: ... daily_tasks(cancelled_at)` 明确失败，而不是在后面冒出离奇 SQL 错误。
+  有对应测试 `test_outdated_data_dir_fails_fast`。
+- **README「演示机准备」**：要求从空 `DATA_DIR` 开始、设置 `MEDIA_TICKET_SECRET`、按需开
+  `SCANNER_ENABLED`，并说明"删 DATA_DIR 即完全重置"与"演示账号由 DEMO01 生成"。
+- **`.env.example`** 补上 `MEDIA_TICKET_SECRET` / `MEDIA_TICKET_SECONDS`（此前缺失，照抄示例会
+  用默认开发密钥）。
+- **接口说明抬头**改为真实状态：45 个 P0 全部实现，P1 未挂载。
+
+验证：`pytest tests -q` → **299 passed, 42 deselected**（新增 1 项旧库守卫测试）。
+
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
 - C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/

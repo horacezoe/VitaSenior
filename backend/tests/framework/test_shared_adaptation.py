@@ -11,6 +11,19 @@ from app.schemas.enums import Role
 from app.seed import import_demo_history
 from app.services import agent_capabilities, health_capabilities, identity_capabilities
 
+def test_outdated_data_dir_fails_fast(tmp_path):
+    """An old DATA_DIR must fail with one clear message, not obscure SQL errors."""
+    from sqlalchemy import create_engine, text
+    from app.core.db import assert_schema_current
+    engine = create_engine("sqlite:///" + str(tmp_path / "old.sqlite3"))
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE daily_tasks (id VARCHAR PRIMARY KEY, elder_id VARCHAR)"))
+        with pytest.raises(RuntimeError, match="DATABASE_SCHEMA_OUTDATED"):
+            assert_schema_current(engine)
+    finally:
+        engine.dispose()
+
 def test_capability_declarations_are_per_domain_and_aggregated(env):
     app, client, clock, seed = env
     for module in (identity_capabilities, health_capabilities, agent_capabilities):

@@ -66,6 +66,24 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 也可使用 `--factory app.main:create_app` 形式。浏览器访问 `/docs`、`/openapi.json`；公开健康检查 `/api/v1/health`，其他 URL 前缀 `/api/v1`。只开一个 worker。F0 默认关闭扫描器；设置 SCANNER_ENABLED=true 后仅运行每 5 秒的可关闭 tick 骨架，不产生真实提醒、60 秒应用或任何模型调用。Ctrl+C 由 lifespan 取消循环并释放 DB engine。
 
+## 演示机准备（重要）
+
+F1 没有迁移工具，`create_all` 只建缺失的表、**不会给旧表加列**。启动时会校验实际表结构，
+若 `DATA_DIR` 里是旧库，会直接报 `DATABASE_SCHEMA_OUTDATED: ... missing daily_tasks(cancelled_at)`
+这类明确错误而不是在后面冒出离奇的 SQL 错误。
+
+所以演示机一律**从空数据目录开始**：
+
+```powershell
+$env:DATA_DIR = 'D:/vitasenior-demo'      # 换一个新目录，或先整个删掉旧目录
+$env:MEDIA_TICKET_SECRET = '<至少16位随机串>'   # 媒体链接签名密钥，别用示例值
+$env:SCANNER_ENABLED = 'true'             # 需要自动到期结算时打开
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+演示账号不用手工造：`POST /api/v1/demo/experiences` 每次生成一对老人/子女手机号与未确认草稿，
+随后用 AUTH01/AUTH02 正常登录即可。数据库与媒体文件都在 `DATA_DIR` 下，删目录即完全重置。
+
 ## 验收
 
 工作目录 backend，使用隔离测试数据，不要把运行 DB 交给测试。
