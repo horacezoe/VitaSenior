@@ -41,6 +41,10 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
     medication = MedicationService(clock, access=access, media=media, memory=memory)
     checkins = CheckinService(clock, access=access, media=media, memory=memory)
     reports = ReportService(clock, access=access, memory=memory)
+    # Late-bound provider status so the dashboard can report the real mode without
+    # the health domain reading Settings: B's one-line change is
+    # `provider_mode=self.provider_mode` (default "mock" keeps old behaviour).
+    reports.provider_mode = "real" if settings.chat_provider == "real" else "mock"
     changes = ChangeService(clock, settings)
     notifications = NotificationService(clock, access=access, media=media, changes=changes)
     changes.bind(medication=medication, notifications=notifications, memory=memory, media=media)

@@ -200,5 +200,7 @@ class Dashboard(DTO):
     attention_items: list[AttentionItem]
     recommendations: list[str]
     memory_summary: str
-    provider_mode: Literal["mock"]
+    # Which understanding provider produced this view: "real" when a real chat
+    # provider is configured, "mock" otherwise. Never hardcode "mock".
+    provider_mode: Literal["mock", "real"]
     risk_assessment: RiskAssessment

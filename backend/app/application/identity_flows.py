@@ -150,7 +150,10 @@ def create_change(auth, elder_id: str, body, key: str) -> dict:
         with read_unit(request) as uow:
             check_access(request, uow.session, auth.actor, elder_id, "child")
             plan = state.services.medication.get_plan(uow.session, auth.actor, body.target_id)
-    text, notice = prepare_proposal_notice(body, tts=ProposalFixtureTTS(), plan=plan)
+    # Real speech can narrate ANY proposal text; the five exact fixtures remain the
+    # mock path (a mock must never invent audio for an unknown sentence).
+    tts = state.agent_tts if state.settings.tts_provider == "real" else ProposalFixtureTTS()
+    text, notice = prepare_proposal_notice(body, tts=tts, plan=plan)
     with write_unit(request) as uow:
         check_access(request, uow.session, auth.actor, elder_id, "child")
         def operation():
