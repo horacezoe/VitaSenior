@@ -279,9 +279,10 @@ def test_wrong_model_format_or_advertised_transcript_is_rejected(change):
     assert caught.value.status == 502
 
 
-def test_optional_audio_format_and_exact_transcript_are_accepted():
+@pytest.mark.parametrize("transcript", [TEXT, None])
+def test_optional_audio_format_and_exact_or_null_transcript_are_accepted(transcript):
     body = audio_response(pcm_wav()).json()
-    body["choices"][0]["message"]["audio"].update(format="wav", transcript=TEXT)
+    body["choices"][0]["message"]["audio"].update(format="wav", transcript=transcript)
     assert adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT).text == TEXT
 
 

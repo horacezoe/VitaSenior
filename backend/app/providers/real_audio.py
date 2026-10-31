@@ -162,7 +162,11 @@ class MiMoTTS:
         audio = message.get("audio")
         if not isinstance(audio, dict) or audio.get("format", "wav") != "wav":
             raise self._error(502, "invalid_audio")
-        if audio.get("transcript", text) != text:
+        # MiMo's real WAV response explicitly sets transcript=null when no
+        # separate transcript is supplied. A non-null transcript must still
+        # match; absence is not evidence that different text was spoken.
+        transcript = audio.get("transcript")
+        if transcript is not None and transcript != text:
             raise self._error(502, "transcript_mismatch")
         encoded = audio.get("data")
         if not isinstance(encoded, str) or not encoded or len(encoded) > self.MAX_BASE64_CHARS:
