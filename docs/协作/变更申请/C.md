@@ -1,4 +1,58 @@
-# C 共享适配申请
+# C 当前接手清单：0894154 后的完整播报与可信来源
+
+2026-10-31。A最新 `integration/f1@0894154494f3363435fed9d31b146b22dadbd8c8` 已合入。C本批只改白名单；公共与A/B文件仍交各自负责人。本节覆盖下方历史已解决项。
+
+## 1. A：请把“按类型的句子”接成“实际字段内容”
+
+准确复现：CHANGE01提交 `patch={"medical_notes":"补充社区复查记录"}`，通知录音/文字仍是“孩子帮您更新了档案。请听取本次修改的内容，如果不同意，请明确拒绝。”。`app/fixtures/proposal_notice.py::notice_for(target_type, operation)` 从未接收body.patch，无法播报实际值。它虽不再是音调，也不能证明老人听到这次改动。C的 `test_default_change_http_notification_reads_actual_patch_values` 保留完整内容断言并strict xfail；NOTI03继续关闭。
+
+C新增可直接接入的准确API（位于 `app.providers.proposal_notice`）：
+
+```python
+def proposal_text(body: ChangeProposalWrite, *, plan: MedicationPlan | None = None) -> str: ...
+def prepare_proposal_notice(
+    body: ChangeProposalWrite, *, tts: TTSProvider,
+    plan: MedicationPlan | None = None,
+) -> tuple[str, SpokenNotice | None]: ...
+class ProposalFixtureTTS:  # implements existing C TTSProvider
+    def synthesize(self, text: str, voice_id: str | None = None) -> Speech: ...
+```
+
+建议最小接线，仍由 A 实施：
+
+1. identity_flows.create_change 的短读UoW验child访问；计划update/deactivate时通过MedicationPort.get_plan读取实际plan，其plan_id/base_version必须相符。关闭读UoW后准备语音。
+2. 在全部UoW之外调用 `full_text, notice = prepare_proposal_notice(body, plan=plan, tts=ProposalFixtureTTS())`，或用集中composition注入符合TTSProvider的实例。不要在服务内调用TTS/读WAV。
+3. 写UoW按现有流程重新验权/目标/版本/绑定，调用已冻结 `changes.create(..., notice=notice)`。A的ChangeService已有before_snapshot，可用纯 `proposal_text(body, plan=MedicationPlan.model_validate(snapshot) if needed else None)` 生成当前完整文字，无provider/文件IO；notice存在时必须与它完全相同，否则拒绝登记。
+4. NotificationEnqueue.text始终保存上述完整文字。notice=None时audio_asset_id=null、proposal.status=pending_notice，不因为文字存在/一般提醒/模拟提示句启动窗口；本人明确accept/reject继续可用。无需为这个接线另加同名DTO或扩展客户端schema。
+5. 五个完整例子/语音在 `fixtures/agent/proposal_cases.json` 和 `proposal_manifest.json`，测试验证真实字节、hash、逐字完整文本。只是精确固定mock；任意新备注或不同计划ID没有语音时如实保留文字，不把类别录音当后备音频。A现有 `notice_for` 不应再供提案路径使用。
+
+## 2. B：冻结的 source 已由 C 传递，真实实现必须接收并保存
+
+A的CheckinPort已冻结：
+
+```python
+def create_or_update(
+    self, tx: Session, actor: Actor, elder_id: str,
+    payload: CheckinWrite | CheckinUpdate, checkin_id: str | None = None,
+    *, source: Literal["user", "agent_confirmed"] = "user",
+) -> Checkin: ...
+```
+
+但 `app/services/health_service.py::CheckinService.create_or_update` 仍无该关键字，也没有row.source赋值。C已在所有record_*执行处固定传agent_confirmed，只接受返回同一来源；未接入的旧适配器明确501、动作仍pending，无健康写入/幂等成功缓存；接参却忽略来源则502并原子回滚，不重试user，不改B表。
+
+请B实现上述参数、运行时限定枚举值、在创建与同餐替换/纠正的明确来源策略下真实写 `row.source = source`（修订先保存旧值）。普通HTTP保持默认user，严禁把JSON.source透传；demo_seed沿既有内部历史导入入口，不开放给客户端。C回归已验证客户端自报agent_confirmed被422拒绝、直接HTTP仍source=user；两个真实C确认验收因该缺口strict xfail，不算通过。
+
+## 3. 系统授权已接，继续保持单一入口
+
+A已发布SYSTEM_ACTOR/中央require_elder_access，C沿用同一AccessPort；没有构造老人Actor。context/on_source_changed允许中央授权的系统来源失效；记忆本人编辑/明确偏好和Agent执行拒绝系统主体。真实默认A/B ports测试已观察到超时档案/设置的C失效调用收到共享SYSTEM_ACTOR、applied_by=timeout，无服药副作用。旧“缺系统入口”申请不再作为当前阻塞。
+
+## 4. 闸门与当前影响
+
+C代码/测试/素材已准备。全量、C、契约与架构输出见交接/C.md。本批默认网络烟测在Agent确认真实501处失败，严格三轮32 OK / 4 PENDING / 0 FAIL、退出1；不得用预期失败/port隔离通过替代完整默认部署通过。保持NOTI03=false；A/B修复后去掉三个strict xfail，重新跑C/全量/契约/架构/严格三轮/真实网络验收，再由B开启NOTI03。
+
+---
+
+# C 历史共享适配申请
 
 2026-10-31；C1 基于 f1-reviewed-v1 = 1034c7698de4394b3e7695a3a820df2dcfeaf28b。用户确认 A0 与 C 正在并行开发。C 不修改公共文件，以下交 A 按 A0 统一落地；不要求变更既有 HTTP 字段。
 

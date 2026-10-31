@@ -357,6 +357,33 @@ health 接口尚未开启 `health_capabilities`（`PLAN02/TASK01/REC01/REC02/REP
 按提交状态（`NOTI03` 仍由 B 关闭）为 **34 ok / 3 pending / 0 failed**；
 `pytest tests -q` → **267 passed, 42 deselected**（无 xfail）。
 
+### 11.7 接入 C 的完整提案播报（`974d719` 之后）
+
+C 提供了 `app/providers/proposal_notice.py`：`proposal_text()` 逐字段叙述补丁（含显式清空），
+`ProposalFixtureTTS` 按文本精确匹配 5 段完整语音。A 侧接线：
+
+- `identity_flows.create_change` 在写事务**之外**调用
+  `prepare_proposal_notice(body, tts=ProposalFixtureTTS(), plan=...)`；用药 update/deactivate 先用
+  一个短读 UoW 调 `MedicationPort.get_plan` 取当前计划供叙述使用。
+- 返回的完整文本作为通知 `text`，有匹配语音时用返回的 `SpokenNotice` 登记为 `audio_asset_id`；
+  没有匹配语音时只保存完整文字、保持 `pending_notice`、**不会**开启窗口（C 的约定）。
+- `ChangePort.create(..., text, notice)` 已冻结两个可选参数：`text` 为权威叙述文本，`notice` 为
+  语音（可为 None）。
+- 删除了 A 上一批的通用提示语音素材（`backend/fixtures/identity/*.wav` 与
+  `app/fixtures/proposal_notice.py`），避免"只播类别不播内容"的两套实现并存。
+- 因此 C 的 A 侧 strict xfail
+  `test_default_change_http_notification_reads_actual_patch_values` 已 XPASS，标记按约定移除。
+
+**剩余唯一阻塞（B）**：C 现在强制"可信来源"，`CheckinService.create_or_update` 必须接受并保存
+冻结的 `source` 参数，否则 `AGENT02` 确认动作如实返回 501（`Checkin adapter must implement the
+trusted source parameter`）。B 的实现到位后：
+
+| 场景 | 当前 | B 落地后预期 |
+| --- | --- | --- |
+| `pytest tests -q` | 290 passed / 2 xfailed（均为 B 的 source） | 292 passed / 0 xfailed |
+| 联调（NOTI03 关闭，B 自己的开关） | 32 ok / 4 pending | 33 ok / 3 pending |
+| 联调（NOTI03 临时打开） | 37 ok / 1 pending（AGENT02） | 38 ok / 0 pending |
+
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
 - C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/

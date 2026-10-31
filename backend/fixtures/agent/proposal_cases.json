@@ -1,0 +1,24 @@
+[
+  {
+    "fixture_id": "proposal_profile_full",
+    "body": {"target_type": "profile", "target_id": "elder-example", "operation": "update", "base_version": 1, "patch": {"medical_notes": "补充社区复查记录"}}
+  },
+  {
+    "fixture_id": "proposal_settings_full",
+    "body": {"target_type": "reminder_settings", "target_id": "elder-example", "operation": "update", "base_version": 1, "patch": {"exercise": {"enabled": false, "local_time": "17:00"}, "voice_enabled": false}}
+  },
+  {
+    "fixture_id": "proposal_plan_create_full",
+    "body": {"target_type": "medication_plan", "operation": "create", "patch": {"name": "演示药", "dose_display": "一片", "schedule": {"mode": "fixed", "slots": [{"slot_id": "morning", "local_time": "08:00"}]}, "start_date": "2026-10-31"}}
+  },
+  {
+    "fixture_id": "proposal_plan_update_full",
+    "body": {"target_type": "medication_plan", "operation": "update", "target_id": "example-plan", "base_version": 1, "patch": {"dose_display": "两片", "schedule": {"mode": "after_meal", "slots": [{"slot_id": "evening", "meal_slot": "dinner", "delay_minutes": 30}]}, "end_date": null}},
+    "plan": {"plan_id": "example-plan", "elder_id": "elder-example", "version": 1, "active": true, "updated_at": "2026-10-31T00:00:00Z", "name": "演示药", "dose_display": "一片", "schedule": {"mode": "fixed", "slots": [{"slot_id": "morning", "local_time": "08:00"}]}, "start_date": "2026-10-31"}
+  },
+  {
+    "fixture_id": "proposal_plan_deactivate_full",
+    "body": {"target_type": "medication_plan", "operation": "deactivate", "target_id": "example-plan", "base_version": 1, "patch": {}, "reason": "按已确认的计划调整"},
+    "plan": {"plan_id": "example-plan", "elder_id": "elder-example", "version": 1, "active": true, "updated_at": "2026-10-31T00:00:00Z", "name": "演示药", "dose_display": "一片", "schedule": {"mode": "fixed", "slots": [{"slot_id": "morning", "local_time": "08:00"}]}, "start_date": "2026-10-31"}
+  }
+]

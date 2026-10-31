@@ -115,7 +115,7 @@ def test_real_profile_port_confirmation_and_replay(api):
 def test_unimplemented_b_write_rolls_back_and_cancel_still_works(api):
     app,client,_,_,_=api
     class MissingCheckins:
-        def create_or_update(self,*args):
+        def create_or_update(self,*args,**kwargs):
             raise AppError(501,'MODULE_NOT_IMPLEMENTED','Explicit missing B test port')
     app.state.agent.services=replace(app.state.agent.services,checkins=MissingCheckins())
     result=turn(api)
@@ -332,6 +332,7 @@ def test_agent_cannot_manufacture_player_receipts():
     assert exc.value.status==422
 
 
+@pytest.mark.xfail(strict=True, reason='B real CheckinService has not implemented the frozen source keyword; C refuses to mislabel provenance')
 def test_actual_b_confirmation_writes_once_and_report_uses_same_record(api):
     from app.models.health import Checkin
     app,client,clock,seed,_=api
@@ -351,12 +352,12 @@ def test_actual_b_confirmation_writes_once_and_report_uses_same_record(api):
         assert report.records.exercise[0].checkin_id==confirmed.json()['data']['result']['checkin_id']
         assert report.completion.progress.exercise.completed==1
         unit.commit()
-    # Current frozen B port defaults to user; C must not directly rewrite B's
-    # table to pretend the missing agent_confirmed source argument is wired.
-    assert confirmed.json()['data']['result']['source']=='user'
+    assert confirmed.json()['data']['result']['source']=='agent_confirmed'
 
 
-@pytest.mark.parametrize('plan_change',['none','during_provider','before_confirm'])
+@pytest.mark.parametrize('plan_change',[
+    pytest.param('none', marks=pytest.mark.xfail(strict=True, reason='B real CheckinService lacks the frozen trusted source parameter')),
+    'during_provider','before_confirm'])
 def test_medication_new_day_task_ids_remain_valid_after_planning(api,plan_change):
     from app.schemas.health import MedicationPlanWrite, PlanPatch
     from app.models.health import Checkin, DailyTask

@@ -57,7 +57,7 @@ class ChangeService:
     # ---- public port surface -------------------------------------------------
 
     def create(self, tx: Session, actor: Actor, elder_id: str, body: ChangeProposalWrite, now: datetime, *,
-               notice=None) -> ChangeProposal:
+               text=None, notice=None) -> ChangeProposal:
         require_elder_access(tx, actor, elder_id, "child")
         self._validate_target(tx, elder_id, body)
         snapshot = self._snapshot(tx, actor, elder_id, body)
@@ -80,7 +80,9 @@ class ChangeService:
         notification = self.notifications.enqueue(tx, actor, f"proposal:{row.id}", NotificationEnqueue(
             elder_id=elder_id, kind="profile_change", category="general",
             title=TITLES[(body.target_type, body.operation)],
-            text=notice.text if notice is not None else TITLES[(body.target_type, body.operation)],
+            # C's full narration text is authoritative; the title-only fallback is
+            # used only when the caller supplied no narration at all.
+            text=text if text is not None else (notice.text if notice is not None else TITLES[(body.target_type, body.operation)]),
             audio_asset_id=audio_asset_id, repeat_count=1, due_at=now, proposal_id=row.id,
         ))
         # The port returns the Notification DTO (notification_id), not an ORM row.

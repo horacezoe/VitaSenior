@@ -28,7 +28,8 @@ class TestCheckins:
     def __init__(self, clock):
         self.clock, self.calls, self.fail_after_write = clock, 0, False
 
-    def create_or_update(self, tx, actor, elder_id, payload, checkin_id=None):
+    def create_or_update(self, tx, actor, elder_id, payload, checkin_id=None, *, source='user'):
+        assert source in {'user', 'agent_confirmed'}
         if payload.type == 'medication':
             task = tx.get(TaskRow, payload.task_id)
             if task is None or task.elder_id != elder_id or task.plan_id != payload.payload.plan_id:
@@ -38,7 +39,7 @@ class TestCheckins:
                          local_date=local_date(payload.occurred_at), occurred_at=payload.occurred_at,
                          task_id=payload.task_id, payload_json=payload.payload.model_dump(mode='json'),
                          slot_key=payload.payload.meal_slot if payload.type == 'diet' else None,
-                         source='agent_confirmed', created_at=self.clock.now(), updated_at=self.clock.now())
+                         source=source, created_at=self.clock.now(), updated_at=self.clock.now())
         tx.add(row)
         tx.flush()
         if self.fail_after_write:

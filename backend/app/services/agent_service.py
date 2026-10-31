@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import inspect
 from collections.abc import Mapping, Sequence
 from datetime import date
 
@@ -15,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.bundle import ServiceBundle
-from app.contracts.context import Actor
+from app.contracts.context import Actor, SYSTEM_USER_ID
 from app.core.clock import Clock, local_date
 from app.core.errors import AppError
 from app.core.ids import new_id
@@ -42,6 +43,8 @@ class AgentService:
         self.clock, self.services, self.memory = clock, services, memory
 
     def _access(self, tx, actor, elder_id):
+        if actor.user_id == SYSTEM_USER_ID:
+            raise AppError(403, "ELDER_ACCESS_DENIED", "System settlement cannot confirm user actions")
         self.services.access.require_elder_access(tx, actor, elder_id, "self")
 
     def _references(self, tx, actor, request):
@@ -287,7 +290,17 @@ class AgentService:
                 plan = self.services.medication.get_plan(tx, actor, body.payload.plan_id)
                 if plan.elder_id != row.elder_id or plan.version != target.plan_version:
                     raise AppError(409, 'VERSION_CONFLICT', 'Medication plan changed after preparation')
-            output = self.services.checkins.create_or_update(tx, actor, row.elder_id, body)
+            writer = self.services.checkins.create_or_update
+            # An older B adapter cannot preserve the newly frozen provenance.
+            # Fail before calling it; never retry without source or rewrite B rows.
+            try:
+                inspect.signature(writer).bind(tx, actor, row.elder_id, body, source="agent_confirmed")
+            except TypeError as exc:
+                raise AppError(501, "MODULE_NOT_IMPLEMENTED",
+                               "Checkin adapter must implement the trusted source parameter") from exc
+            output = writer(tx, actor, row.elder_id, body, source="agent_confirmed")
+            if output.source != "agent_confirmed":
+                raise AppError(502, "PROVIDER_ERROR", "Checkin adapter did not preserve confirmed provenance")
         elif row.type == "update_profile":
             body = ProfileUpdate.model_validate(payload['update'])
             if payload.get('target_id') != row.elder_id:

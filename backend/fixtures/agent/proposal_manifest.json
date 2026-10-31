@@ -1,0 +1,37 @@
+﻿[
+    {
+        "fixture_id":  "proposal_profile_full",
+        "file":  "proposal_profile_full.wav",
+        "text":  "【模拟】孩子申请修改您的档案。医疗备注：\"补充社区复查记录\"。以上是本次完整提案。完整播放结束后，您有60秒可以拒绝；也可以明确接受或拒绝。",
+        "sha256":  "caa0c9a61198e5e4e39a7db8b74e3f4cdb84b1ece95c758693a44e2813e80528",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop; complete proposal text; offline 16kHz mono PCM"
+    },
+    {
+        "fixture_id":  "proposal_settings_full",
+        "file":  "proposal_settings_full.wav",
+        "text":  "【模拟】孩子申请修改您的提醒设置。运动提醒：关闭，保存时间为17:00。语音提醒：关闭。以上是本次完整提案。完整播放结束后，您有60秒可以拒绝；也可以明确接受或拒绝。",
+        "sha256":  "b5c7c940b17f4018a036b0430a2a835b593606c1641febfe35d77554f63fe113",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop; complete proposal text; offline 16kHz mono PCM"
+    },
+    {
+        "fixture_id":  "proposal_plan_create_full",
+        "file":  "proposal_plan_create_full.wav",
+        "text":  "【模拟】孩子申请新增以下用药计划。药品名称：\"演示药\"。每次用量：\"一片\"。服药时间安排：替换为以下全部时段：时段\"morning\"，08:00。开始日期：\"2026-10-31\"。结束日期：清除该值。药品图片引用：清除该值。计划备注：清空文字。以上是本次完整提案。完整播放结束后，您有60秒可以拒绝；也可以明确接受或拒绝。",
+        "sha256":  "74841def54658018ce6771dbeab7c3df4fe821b7e2b1cc58776780dceaae0084",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop; complete proposal text; offline 16kHz mono PCM"
+    },
+    {
+        "fixture_id":  "proposal_plan_update_full",
+        "file":  "proposal_plan_update_full.wav",
+        "text":  "【模拟】孩子申请修改用药计划，计划编号\"example-plan\"，药品\"演示药\"，原用量\"一片\"。每次用量：\"两片\"。服药时间安排：替换为以下全部时段：时段\"evening\"，晚餐后30分钟。结束日期：清除该值。以上是本次完整提案。完整播放结束后，您有60秒可以拒绝；也可以明确接受或拒绝。",
+        "sha256":  "69e0680754ccc3b6f306a6477b8cb5dcebd63687ad5b38101328741ac88188d0",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop; complete proposal text; offline 16kHz mono PCM"
+    },
+    {
+        "fixture_id":  "proposal_plan_deactivate_full",
+        "file":  "proposal_plan_deactivate_full.wav",
+        "text":  "【模拟】孩子申请停用用药计划，计划编号\"example-plan\"，药品\"演示药\"，原用量\"一片\"。申请原因：\"按已确认的计划调整\"。以上是本次完整提案。完整播放结束后，您有60秒可以拒绝；也可以明确接受或拒绝。",
+        "sha256":  "7c9e6197c5daa9aa81f1000e21144e80e414085d4312ec696293937d577cadec",
+        "generated_by":  "Windows SAPI Microsoft Huihui Desktop; complete proposal text; offline 16kHz mono PCM"
+    }
+]
