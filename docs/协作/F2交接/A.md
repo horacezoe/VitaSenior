@@ -53,6 +53,7 @@ providers(settings) -> {"chat": settings.chat_provider, "asr": "mock", "tts": se
 | FAST-04 | 完整主链（建档→绑定→饮食确认→看板/日报） | `integration_smoke --strict` 39/0/0 | ✅ |
 | FAST-05 | 真实 TTS 接入且标识准确 | `TTS_PROVIDER=real`、`providers.tts=="real"`、`AI02` 返回真实音频（`is_mock=false`、可播放字节） | ✅ 已由 A 实测：`AI02` 200 / 1.7s，`provider=real`、`is_mock=False`、`audio/wav` 84,524 B / 1760 ms，取回字节以 `RIFF` 开头；B 侧另有用户实听确认 |
 | FAST-06 | 真实 ASR 生产装配（用户追加） | `ASR_PROVIDER=real`、`providers.asr=="real"`、`AI01` 返回真实转写 | ✅ A 已装配并实测：`AI01` 200 / 1.0s，`provider=real`、`is_mock=False`，13.6s PCM WAV → 正确转写；Edge 实际采集未验收 |
+| FAST-07 | 提案播报用真实 TTS（不再限于 5 段预录） | 任意 patch 的提案都带真实音频、文本与语音一致 | ✅ A 已实测：`CHANGE01` 201 / 4.2s，含"术后复查已预约下周二上午九点"的完整叙述，通知带 622,124 B / 12,960 ms 的 `audio/wav`；mock 模式仍走 5 段精确样例（不伪造） |
 
 标签策略：FAST-01–05 全绿后发布新标签（`f2-demo-v1` → `f2-demo-v2` → 本轮 `f2-demo-v3`），
 **不移动 `f1-integrated-v1`**。未通过项按编号写在下表，不用"部分通过"含混表述。
@@ -96,9 +97,10 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 | 项 | 说明 |
 | --- | --- |
-| A 侧真实供应商复跑 | ✅ 已复查（用用户提供的 MiMo key，未入库）：`CHAT_PROVIDER=real` → 生产工厂 → HTTP。纯文字 `AGENT01` **201 / 13.9s**，`providers.chat=real`，正确得出午餐+青菜/豆腐/米饭的待确认 `record_diet`；图片链路 **201 / 4.2s**（空白 1×1 图正确返回"无可记录"，没有伪造动作）；伪造 PNG 字节被供应商拒收时**如实 502 `PROVIDER_ERROR`**，不吞错。真实餐食照片的识别数据仍以 C 的探测为准（A 无照片素材） |
-| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；工厂已就绪，`TTS_PROVIDER=real` 缺 `TTS_API_KEY/TTS_BASE_URL/TTS_MODEL` 会拒绝启动，模块缺失时也不会假装。**同一 MiMo key 的模型列表含 `mimo-v2.5-tts` / `mimo-v2.5-asr`**，B 可直接对接，ASR 也可顺带解决。完整握手见 §5.1 |
-| 手机 HTTPS / 真实设备播放 | 按用户安排延期；当前只验证到字节与票据，未验证真机 `<audio>` 实听 |
+| 看板 `provider_mode` | A 已把公共 schema 从 `const:"mock"` 放开为 `enum:["mock","real"]`（契约 `6c1e8d96…`），并在 composition 里给 `reports.provider_mode` 注入真实值；**B 只需把硬编码的 `"mock"` 换成 `self.provider_mode`**，否则响应仍报 mock |
+| 家庭关怀文字的动态 TTS | 接缝已就绪：任意文字可用 `app.state.agent_tts.synthesize(...)`（真实 TTS 时），B 在 NOTI04 接线即可；A 不在语音事务里做 provider 调用 |
+| 短信 / 社区数据 | 仍是演示实现，需要真实外部服务，本轮不在范围 |
+| 手机 HTTPS / 真实设备播放 / Edge 采集 | 按用户安排延期；只验证了字节、票据与文件级 WAV，未验证真机麦克风/摄像头/实听 |
 | P1 接口 | 登出/解绑/删计划/撤销提案/记忆导出/推送均未挂载 |
 | 完整 AC01–AC14 | 未按总计划逐条演练 |
 

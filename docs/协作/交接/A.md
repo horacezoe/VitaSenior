@@ -22,7 +22,10 @@
 | 阶段 | SHA-256 |
 | --- | --- |
 | F0 基线（A0 结束时未变） | `73f9920606bdd8c6338c67327e72adef1ea1a474352aa4c22c949e071ad75657` |
-| A1/A2 结束（当前） | `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
+| A1 结束（MEDIA03 可选鉴权） | `6a2de0894ef6de2094799d9e3c1d4cef884d317cc62c336c98f535dd1527720d` |
+| A2 结束（`DailyTask.cancelled` + `daily_goal_batches`） | `23f96a0c53e2af8cd27e85875c910dd68cd278dc4fc349eba944a2b12eeba560` |
+| B/C 合并（`Runtime.providers` 值域） | `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
+| **当前（F2：`provider_mode` 值域）** | **`6c1e8d96bfe881605d5d7ffd99a4da93b52d0682c01dbda4be9f9629d8e7f500`** |
 
 唯一的契约差异是 MEDIA03 的 security 从 `[{HTTPBearer}]` 变为 `[{HTTPBearer}, {}]`：
 任务单要求“有效 ticket 单独授权，仍保留 Bearer”，而 `<audio src>` 无法附加 Authorization 头，
@@ -226,7 +229,7 @@ import_demo_history(tx, services, actor, elder_id, demo_id=demo_id, scenario="di
 | `python -m pytest tests/identity -q` | `39 passed` |
 | `python -m pytest tests/framework -q` | `70 passed, 42 deselected` |
 | `python -m pytest tests -m f0_stage -q` | `42 skipped`（阶段已关闭，符合设计） |
-| `python -m app.tools.export_contract --check` | `OpenAPI matches 4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
+| `python -m app.tools.export_contract --check` | `OpenAPI matches 6c1e8d96bfe881605d5d7ffd99a4da93b52d0682c01dbda4be9f9629d8e7f500` |
 | `python -m app.tools.check_architecture` | `Architecture OK` |
 | `python -m pip check` | `No broken requirements found.` |
 | 真实 uvicorn 冒烟（临时 DATA_DIR、`SCANNER_ENABLED=true`、127.0.0.1:8123） | health/DEMO01（含重放）/AUTH01-02/me/runtime/PROF01/ONB01/BIND01-04/MEDIA01-03（含 ticket 播放真实字节）全部通过；CHANGE01 在 B 未就绪时如实 501；`SMOKE_OK` |
@@ -306,9 +309,8 @@ B 的 `backend/health` = `b1535f8` 已经把我的 A0/A1/A2 全部合入（`72d7
 登记并用 `audio_asset_id` 入队通知。因此"完整音频播报"现在可真正启动 60 秒窗口。真实语音仍由 C 的
 TTS 在事务外替换该 fixture，事务形状不变。
 
-**契约变化（本次唯一）**：`DailyTask` 增加 `cancelled` 字段，OpenAPI 重新导出为
-`4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`；表数从 18 变 19
-（`daily_goal_batches`）。`fg04` 的表集合断言已同步。
+**契约变化（本次唯一）**：`DailyTask` 增加 `cancelled` 字段，OpenAPI 重新导出（该阶段快照见 §1 的
+「A2 结束」行）；表数从 18 变 19（`daily_goal_batches`）。`fg04` 的表集合断言已同步。
 
 **当前验证**：`pytest tests -q` → **211 passed, 42 deselected**；`Architecture OK`；
 联调脚本 **21 ok / 8 pending / 0 failed**——`ONB02` 已由 PENDING 转 OK（B 的计划导入 + 历史导入
@@ -325,8 +327,7 @@ C 的新提交（`7aba5a8`，含 C2 HTTP 与"capabilities 留空待 A 激活"）
    与 `services.memory` 同一实例）以及 `agent_chat`/`agent_asr`/`agent_tts` 三个 mock provider。
    C 的 `_ready()` 正是检查这四个属性，缺一个就如实 501。
 2. **放开 `Runtime.providers` 枚举**：`Literal["not_implemented"]` →
-   `Literal["mock","real","not_implemented"]`。mock 是真实可运行的实现、必须能上报；契约 hash 变为
-   `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。
+   `Literal["mock","real","not_implemented"]`。mock 是真实可运行的实现、必须能上报；该阶段快照见 §1 的「B/C 合并」行。
 3. **登记能力**：`agent_capabilities.CAPABILITIES = C2_OPERATIONS`（7 项），`PROVIDERS` 三项为 `mock`。
 
 C 原测试 `test_default_unwired_deployment_stays_501_and_capability_false` 的前提（默认部署未接线）
@@ -396,7 +397,7 @@ B 在 `c1fe1d6` 里实现了可信来源（`CheckinService.create_or_update(...,
 | 同上 `--strict` | **退出码 0** |
 | `GET /runtime` capabilities | **45/45 个 P0 为 true**，仅 `web_push`（P1）为 false |
 | providers | `chat/asr/tts` 均为 `mock` |
-| OpenAPI / 架构 | `4b7ade26…` / `Architecture OK` |
+| OpenAPI / 架构 | 该阶段快照见 §1「B/C 合并」行 / `Architecture OK` |
 
 发布动作（由 A 执行，均为快进或新增，不改写历史）：
 
