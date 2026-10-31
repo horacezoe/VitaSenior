@@ -1,4 +1,61 @@
-# C 当前交接：完整提案内容、SYSTEM 授权与可信来源适配
+# C 当前交接：已合入 B d8c2ad1，交 A 整合复验
+
+日期：2026-10-31（Asia/Shanghai）。状态：**C2_MOCK_INTEGRATION_VERIFIED / READY_FOR_A_REVIEW**。本节覆盖下方历史 NOT_READY、source 未接入、NOTI03 关闭和 strict xfail 的结论；不代表手机/真实供应商或完整产品 AC01–AC14 已全部验收。
+
+已验证代码提交：`e24604b84ca91226f4cd7461a31b4a146edf7fc1`，分支 `backend/agent`。正常快进合入 `origin/backend/health@d8c2ad1`，含 A `integration/f1@666b317` 和 C 前批 `974d719`。没有重置、强推或移动发布标签。
+
+## 本轮实际改动
+
+仅 C 白名单，保留原成功断言和全部失败路径：
+
+- `tests/agent/test_http.py`：删除真实运动确认测试的 source 缺口 strict xfail；删除服药跨日测试 `[none]` 参数的同一标记。仍验证 source=agent_confirmed、真实 B 一次落库、重复确认不新增、日报引用同一记录；`during_provider`/`before_confirm` 版本冲突保持原样。
+- `tests/agent/test_production_acceptance.py`：默认 runtime 的 NOTI03 断言由 false 更新为 true，与 B 已验收并启用的实际能力一致。A 已移除的完整内容 HTTP xfail 没有重新加回。
+- `fixtures/agent/README.md` 与 C 两份交接文档：更新已接线、完整内容和来源验证事实；没有编辑 A/B 或公共文件。生产代码未因本轮测试同步而改写。
+
+## 当前真实行为
+
+B 冻结的 `create_or_update(..., *, source="user" | "agent_confirmed")` 已保存可信来源；C 仍在明确确认后固定传 agent_confirmed。修订先保留旧来源，普通 HTTP 不接收自报 source。原先因旧签名返回501的运动/服药确认现已通过真实默认装配，不再是未实现依赖。
+
+A 已接 C 的 `proposal_text/prepare_proposal_notice/ProposalFixtureTTS`，按本次 body 和真实计划快照准备完整文字；匹配的预录完整语音经真实媒体入口播放。NOTI03默认开启，完整播放才启动60秒窗口；未进入、未接听、未完成播放或无匹配音频时不启动。五个固定样例满足本轮 mock MVP；不同文字/实际计划ID无匹配语音仍保存全文、audio=null、pending_notice，显式接受/拒绝可用。没有把它扩展成任意文本TTS或设备实听保证。
+
+## 本机实际验收
+
+工作目录 `backend`，Windows / Python3.13.9 / 原 `.venv` 与锁定依赖。pytest 全部使用临时 SQLite/FakeClock；真实默认 Uvicorn 网络烟测用独立临时 DATA_DIR/随机端口且已退出，未操作运行数据库。
+
+```text
+python -m pytest tests/agent -q --tb=short -rx
+96 passed, 1 warning in 17.05s
+
+python -m pytest tests -q --tb=short -rx
+298 passed, 42 deselected, 1 warning in 70.65s (0:01:10)
+
+python -m app.tools.integration_smoke --strict
+39 ok, 0 pending, 0 failed; exit 0
+
+python tests/agent/smoke_network.py
+C_NETWORK_SMOKE_OK; exit 0
+
+python -m app.tools.export_contract --check
+OpenAPI matches 4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c
+
+python -m app.tools.check_architecture
+Architecture OK: no cross-domain implementation imports
+
+python -m pip check
+No broken requirements found.
+```
+
+无失败、无 xfail/XPASS、无PENDING。42 deselected 是既有A0历史F0分类；唯一warning是既有Starlette/httpx弃用提示。真实网络覆盖默认装配的登录/建档/绑定、Agent pending→确认→重放、真实日报/记忆、ASR/TTS及ticket字节、CHANGE04明确接受；严格三轮另覆盖NOTI03完整回执、窗口和到期应用。
+
+OpenAPI 路径 `backend/contracts/openapi.json`，SHA-256 如上，未由 C 修改。未运行手机HTTPS/实际播放器、真实供应商、完整AC01–AC14/P1推送。未匹配的AI02文本仍可明确501，Agent文字降级和未知提案无音频保持既有规则，不列为任意文本语音完成。
+
+## A 的接手
+
+正常合入本分支最新提交后，按本节命令做一次最终整合复验并刷新A自己的当前交接/接口7.1历史描述；公共文档继续由A维护。B要求的三处C过时预期已全部移除，原三个集成阻塞不再存在。随后固定现有演示脚本，进入设备演练；本轮不新增供应商、音频协议、依赖或基础设施。既有 framework-v1/f1-reviewed-v1/f1-shared-v1 标签保持原指向，本批不重建基线。
+
+---
+
+# C 历史交接：完整提案内容、SYSTEM 授权与可信来源适配
 
 日期：2026-10-31（Asia/Shanghai）。状态：**C_IMPLEMENTED / INTEGRATION_NOT_READY**。本节覆盖后面的历史就绪结论；三个 strict xfail 和网络阻塞均未计为通过。
 
