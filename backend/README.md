@@ -1,5 +1,7 @@
 # VitaSenior F0 后端
 
+当前跨机演示、全新数据库初始化和可选样例升级步骤见[另一台电脑启动演示](../docs/另一台电脑启动演示.md)。其中区分现行部署步骤与下文保留的F0历史记录。
+
 本阶段是供下一阶段并行开发的公共基线，不是业务完成版本。Python + FastAPI + SQLAlchemy + SQLite，无前端改动，无真实模型/ASR/TTS/推送调用。只有 SYS01、SYS02、AUTH01、AUTH02、AUTH04 已实现；另 40 个 P0 接口校验请求/权限后返回 `501 MODULE_NOT_IMPLEMENTED`。实际状态见 `../docs/协作/框架交接记录.md`。
 
 ## 安装
