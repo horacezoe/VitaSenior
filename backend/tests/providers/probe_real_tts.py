@@ -18,6 +18,7 @@ import wave
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 BACKEND = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BACKEND))
@@ -50,7 +51,7 @@ def run(argv=None):
     if missing:
         parser.error("Missing local configuration: " + ", ".join(missing))
     text = args.text or ("您好，这是银龄健康助手的新语音测试。请先查看页面上的完整文字，再听这段语音。测试时间："
-                        + datetime.now(timezone.utc).strftime("%Y年%m月%d日%H时%M分%S秒") + "。")
+                        + datetime.now(ZoneInfo("Asia/Hong_Kong")).strftime("%Y年%m月%d日%H时%M分%S秒") + "。")
     if not text.strip() or len(text) > 200 or "\x00" in text:
         parser.error("Use non-blank demo text of at most 200 characters")
     parent = BACKEND / ".pytest_cache" / "f2-audio-b-probe"
