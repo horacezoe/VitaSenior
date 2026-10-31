@@ -73,15 +73,21 @@ def capabilities(operation_ids: Iterable[str]) -> dict[str, bool]:
 def build_agent_providers(settings: Settings | None = None):
     """The single seam for agent providers.
 
-    F2 adds only a real TTS (module owned by B); chat and ASR stay mock, so this is
-    a two-way switch, not a generic provider platform. The returned objects are the
-    ones the app actually serves with, and `providers()` reports exactly those.
+    F2 switches two modalities: understanding (chat, C's adapter) and TTS. ASR stays
+    mock. The returned objects are exactly what the app serves with, and
+    `providers()` reports those, so a mock can never be labelled real.
     """
     from app.providers.mock_audio import MockASR
-    from app.providers.mock_chat import MockUnderstanding
     settings = settings or Settings()
-    chat, asr = MockUnderstanding(), MockASR()
-    return chat, asr, _build_tts(settings)
+    return _build_chat(settings), MockASR(), _build_tts(settings)
+
+def _build_chat(settings: Settings):
+    from app.providers.mock_chat import MockUnderstanding
+    if settings.chat_provider == "mock":
+        return MockUnderstanding()
+    from app.providers.real_understanding import RealUnderstanding  # C owns this adapter
+    return RealUnderstanding(api_key=settings.chat_api_key, base_url=settings.chat_base_url,
+                             model=settings.chat_model, timeout_seconds=settings.chat_timeout_seconds)
 
 def _build_tts(settings: Settings):
     from app.providers.mock_audio import MockTTS
@@ -98,4 +104,4 @@ def _build_tts(settings: Settings):
 def providers(settings: Settings | None = None) -> dict[str, str]:
     """Report what is actually wired. Never claim 'real' for a mock implementation."""
     settings = settings or Settings()
-    return {"chat": "mock", "asr": "mock", "tts": settings.tts_provider}
+    return {"chat": settings.chat_provider, "asr": "mock", "tts": settings.tts_provider}

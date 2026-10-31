@@ -39,20 +39,29 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     # depending on any team's current progress (stable across all three domains).
     assert capabilities({'ZZZ99'}) == {'ZZZ99': False}
 
-def test_provider_factory_switches_only_tts(tmp_path):
-    """F2 seam: chat/ASR stay mock; TTS may be real once B ships the module."""
+def test_provider_factory_separates_mock_and_real(tmp_path):
+    """F2 seam: understanding and TTS each switch independently; ASR stays mock."""
     from app.composition import build_agent_providers
     from app.providers.mock_audio import MockTTS
-    settings = Settings(data_dir=tmp_path, tts_provider="mock")
-    chat, asr, tts = build_agent_providers(settings)
-    assert isinstance(tts, MockTTS)
-    assert providers(settings) == {"chat": "mock", "asr": "mock", "tts": "mock"}
-    # Declaring a real TTS is allowed by config, but it must refuse to fake it
-    # while B's module is absent.
+    from app.providers.mock_chat import MockUnderstanding
+    mock = Settings(data_dir=tmp_path)
+    chat, asr, tts = build_agent_providers(mock)
+    assert isinstance(chat, MockUnderstanding) and isinstance(tts, MockTTS)
+    assert providers(mock) == {"chat": "mock", "asr": "mock", "tts": "mock"}
+    # Real understanding needs explicit credentials, never silently halves.
+    with pytest.raises(ValueError, match="CHAT_PROVIDER=real requires"):
+        Settings(data_dir=tmp_path, chat_provider="real")
+    real = Settings(data_dir=tmp_path, chat_provider="real", chat_api_key="test-key",
+                    chat_base_url="https://example.invalid/v1", chat_model="test-model")
+    real_chat, _, _ = build_agent_providers(real)
+    assert type(real_chat).__name__ == "RealUnderstanding"
+    assert providers(real)["chat"] == "real"
+    # ASR is deferred this round; declaring it real is rejected.
+    with pytest.raises(ValueError, match="ASR must stay mock"):
+        Settings(data_dir=tmp_path, asr_provider="real")
+    # A real TTS must refuse to fake it while B's module is absent.
     with pytest.raises(RuntimeError, match="real_tts.py"):
         build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real"))
-    with pytest.raises(ValueError, match="real providers"):
-        Settings(data_dir=tmp_path, chat_provider="real")
     with pytest.raises(ValueError, match="TTS_PROVIDER"):
         Settings(data_dir=tmp_path, tts_provider="bogus")
 
