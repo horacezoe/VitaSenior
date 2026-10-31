@@ -9,7 +9,7 @@ from app.core.clock import local_date
 from app.core.errors import AppError, unimplemented
 from app.core.idempotency import StoredResult
 from app.providers.planning import ImageInput, request_digest
-from app.providers.dialogue import normalized, report_day
+from app.providers.dialogue import normalized, report_day, risk_requested
 from app.providers.real_understanding import MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES
 from app.routers.dependencies import check_access, check_resource, read_unit, write_unit
 from app.schemas.agent import Action, AgentTurn, ASRResult, TTSResult
@@ -138,7 +138,9 @@ def _proposal_id(services, tx, actor, elder_id, notification_id):
 
 def _needs_tasks(body, chat=None):
     if chat is not None and not _is_mock(chat):
-        return bool(re.fullmatch(r'(?:我)?(?:已经|刚刚|刚才)?(?:吃了药|吃药了|服药了|服用了.+)', normalized(body.text)))
+        # Every real turn receives current task IDs before interpretation, including
+        # named medicines and ASR fragments that contain no generic medicine word.
+        return True
     return body.mock_fixture_id == 'medication_confirm' or (
         body.mock_fixture_id is None and (body.text or '').strip() in {'吃了药', '我吃药了'})
 
@@ -151,18 +153,27 @@ def _snapshot(auth, tx, body, *, include_tasks=True, force_tasks=False):
     state = auth.request.app.state
     profile = state.services.profile.read(tx, auth.actor, body.elder_id)
     tasks, slots, names = [], {}, {}
+    slot_details = {}
+    contexts = []
+    if not _is_mock(state.agent_chat):
+        contexts = [p.model_dump(mode="json", include={"name", "dose_display", "schedule", "start_date", "end_date"})
+                    for p in state.services.medication.list(tx, auth.actor, body.elder_id, True).items]
     if include_tasks and (force_tasks or _needs_tasks(body, state.agent_chat)):
         tasks = state.services.tasks.today(tx, auth.actor, body.elder_id, local_date(state.clock.now())).items
         for task in tasks:
             if task.category != 'medication' or not task.plan_id:
                 continue
             plan = state.services.medication.get_plan(tx, auth.actor, task.plan_id)
-            if plan.elder_id != body.elder_id or plan.version != task.plan_version:
+            if plan.elder_id != body.elder_id:
                 raise AppError(409, 'VERSION_CONFLICT', 'Task snapshot no longer matches current plan')
+            names[task.task_id] = task.title
+            if plan.version != task.plan_version or not plan.active:
+                continue  # Frozen historical task must not block an unrelated chat.
             for slot in plan.schedule.slots:
                 # Derive from actual plan slots, never parse slot_key as slot_id.
                 if task.slot_key == f'{plan.plan_id}:{slot.slot_id}':
                     slots[task.task_id] = slot.slot_id
+                    slot_details[task.task_id] = slot.model_dump(mode="json")
                     names[task.task_id] = plan.name
     snapshot = state.agent.read_snapshot(tx, auth.actor, body, profile=profile,
                                          tasks=tasks, medication_slots=slots)
@@ -170,7 +181,20 @@ def _snapshot(auth, tx, body, *, include_tasks=True, force_tasks=False):
     report_text = state.services.reports.daily(tx, auth.actor, body.elder_id, day).summary_text if day else None
     return replace(snapshot, proposal_id=_proposal_id(state.services, tx, auth.actor,
                                                       body.elder_id, body.context.notification_id), report_text=report_text,
-                   medication_names=names)
+                   medication_names=names, medication_slot_details=slot_details, medication_context=tuple(contexts),
+                   safety_message=_safety_message(state, tx, auth.actor, body.elder_id))
+
+
+def _safety_message(state, tx, actor, elder_id):
+    if not state.services.safety:return None
+    day = local_date(state.clock.now())
+    findings = [x for x in state.services.safety.read(tx, actor, elder_id, day) if x.status == 'active']
+    if findings:
+        return '模型提示潜在风险：' + '；'.join(('基于既定计划，尚不代表已服用。' if x.basis == 'planned' else '基于当日已确认记录。') + x.title + '：' + x.detail[:140] for x in findings[:2])[:500]
+    status = state.services.safety.status(tx, actor, elder_id, day)
+    return {'reviewed':'本次模型对既定计划与当日记录的初步核对未提示相互作用，不能保证没有风险。',
+            'insufficient_data':'药名或相关资料不足，尚不能判断相互作用。',
+            'unavailable':'风险核对暂时失败，不能据此说没有冲突。'}.get(status, '尚未完成模型风险核对。')
 
 
 def turn(auth, body, key):
@@ -227,6 +251,25 @@ def turn(auth, body, key):
                 snapshot = _snapshot(auth, unit.session, planning_input, force_tasks=med_draft)
                 if materializing:
                     unit.commit()
+        if not _is_mock(state.agent_chat) and risk_requested(planning_input.text or ''):
+            # Reuse the configured LLM and evidence validation; no local rules.
+            # Model/network I/O is outside every UoW, logged as a separate node.
+            from app.application.daily_report import enriched_report
+            if remaining() >= 20.0 and state.report_writer is not None:
+                def review_risk():
+                    result = enriched_report(auth, body.elder_id, local_date(state.clock.now()), review_only=True)
+                    if result and result['data'].ai_status == 'unavailable':
+                        raise AppError(502, 'PROVIDER_ERROR', 'Safety model assessment unavailable')
+                    return result
+                try:
+                    run_node(auth.request.state.request_id, body.client_turn_id, "safety_review", review_risk)
+                except AppError as error:
+                    if error.status not in {502, 504}:raise
+                    # The persisted status is unavailable; never report no risk.
+                    pass
+                with read_unit(auth.request) as unit:
+                    _context_access(auth, unit.session, body)
+                    snapshot = replace(snapshot, safety_message=_safety_message(state, unit.session, auth.actor, body.elder_id))
         if image_handles:
             snapshot = replace(snapshot, images=tuple(ImageInput(asset_id, handle.mime_type, _image_bytes(handle))
                                                      for asset_id, handle in image_handles))
@@ -235,6 +278,10 @@ def turn(auth, body, key):
         try:
             plan = run_node(auth.request.state.request_id, body.client_turn_id, "understanding", lambda: state.agent_chat.plan(planning_input, snapshot))
             plan = replace(plan, request_hash=request_digest(body), transcript=planning_input.text or '', asr_provider=asr_provider)
+            if (not _is_mock(state.agent_chat) and snapshot.safety_message
+                    and snapshot.safety_message.startswith('模型提示潜在风险')
+                    and snapshot.safety_message not in plan.reply):
+                plan = replace(plan, reply=plan.reply + ' 另外，' + snapshot.safety_message)
             TypeAdapter(AgentTurn.model_fields['scene'].annotation).validate_python(plan.scene)
             for action in plan.actions:
                 TypeAdapter(Action).validate_python(TypeAdapter(Action).dump_python(action.action, mode='json', exclude_unset=True))

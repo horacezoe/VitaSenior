@@ -36,19 +36,16 @@ def test_asr_punctuation_and_camera_frame_do_not_hide_confirmation(real_api, spo
     assert count(api, Checkin) == 1 and len(captured.calls) == 1
 
 
-def test_photo_then_meal_slot_continues_saved_candidate_without_another_model(real_api):
+def test_meal_photo_uses_time_and_finishes_without_asking_for_a_meal_slot(real_api):
     api, captured = real_api
     image = upload(api)
     first = turn(api, text=None, image_asset_ids=[image], context={'scene': 'meal'})
     assert first.status_code == 201, first.text
-    draft = first.json()['data']
-    assert draft['actions'] == [] and count(api, Checkin) == 0
-    second = turn(api, key='meal-slot', text='午餐', conversation_id=draft['conversation_id'])
-    assert second.status_code == 201, second.text
-    action = second.json()['data']['actions'][0]
+    action = first.json()['data']['actions'][0]
     assert action['preview']['image_asset_ids'] == [image]
     assert action['preview']['foods'] == ['青菜', '豆腐']
-    assert action['status'] == 'pending' and len(captured.calls) == 1 and count(api, Checkin) == 0
+    assert action['preview']['meal_slot'] == 'lunch'
+    assert action['status'] == 'confirmed' and len(captured.calls) == 1 and count(api, Checkin) == 1
 
 
 def test_spoken_cancel_with_frame_is_idempotent_and_cannot_be_confirmed(real_api):
@@ -102,62 +99,62 @@ def test_food_correction_passes_only_authorized_candidate_and_keeps_original_med
     action = revised.json()['data']['actions'][0]
     assert action['preview']['foods'] == ['鱼'] and action['preview']['image_asset_ids'] == [image]
     sent = captured.calls[-1].content.decode()
-    assert '上轮待补充候选' in sent and image not in sent and first['conversation_id'] not in sent
+    assert '这件事已经知道的内容' in sent and image not in sent and first['conversation_id'] not in sent
     assert count(api, Checkin) == 0
 
 
 @pytest.mark.parametrize('switch', ['取消。', '今天的日报'])
 def test_cancel_or_task_switch_discards_diet_clarification(real_api, switch):
     api, captured = real_api
-    first = turn(api, text=None, image_asset_ids=[upload(api)], context={'scene': 'meal'}).json()['data']
+    first = turn(api, text='午餐').json()['data']
     changed = turn(api, key='switch', text=switch, conversation_id=first['conversation_id'])
     assert changed.status_code == 201, changed.text
     follow = turn(api, key='after-switch', text='午餐', conversation_id=first['conversation_id'])
     assert follow.status_code == 201, follow.text
-    assert follow.json()['data']['actions'] == [] and len(captured.calls) == 1 and count(api, Checkin) == 0
+    assert follow.json()['data']['actions'] == [] and len(captured.calls) == 0 and count(api, Checkin) == 0
 
 
 def test_draft_does_not_leak_into_another_conversation(real_api):
     api, captured = real_api
-    turn(api, text=None, image_asset_ids=[upload(api)], context={'scene': 'meal'})
+    turn(api, text='午餐')
     follow = turn(api, key='foreign-chat', text='午餐', conversation_id='a-different-conversation')
     assert follow.status_code == 201, follow.text
-    assert follow.json()['data']['actions'] == [] and len(captured.calls) == 1
+    assert follow.json()['data']['actions'] == [] and len(captured.calls) == 0
 
 
 @pytest.mark.parametrize('draft_only', [False, True])
 def test_expired_action_and_clarification_are_not_silently_reused(real_api, draft_only):
     api, captured = real_api
-    first = turn(api, text=None, image_asset_ids=[upload(api)], context={'scene': 'meal'}).json()['data'] if draft_only else turn(api).json()['data']
+    first = turn(api, text='午餐').json()['data'] if draft_only else turn(api).json()['data']
     api[2].advance(seconds=601)
     follow = turn(api, key='after-expiry', text='午餐' if draft_only else '确认。', conversation_id=first['conversation_id'])
     if draft_only:
-        assert follow.status_code == 201 and '过期' in follow.json()['data']['reply']['text']
+        assert follow.status_code == 201 and '隔了一会儿' in follow.json()['data']['reply']['text']
         assert not follow.json()['data']['actions']
     else:
         assert follow.status_code == 409 and follow.json()['error']['code'] == 'ACTION_EXPIRED'
-    assert count(api, Checkin) == 0 and len(captured.calls) == 1
+    assert count(api, Checkin) == 0 and len(captured.calls) == (0 if draft_only else 1)
 
 
 def test_saved_draft_survives_app_restart_with_same_database(real_api):
     api, captured = real_api
-    image = upload(api)
-    first = turn(api, text=None, image_asset_ids=[image], context={'scene': 'meal'}).json()['data']
+    first = turn(api, text='我散步了').json()['data']
     restarted = create_app(api[0].state.settings, clock=api[2])
     restarted.state.agent_chat = RealUnderstanding(api_key='explicit-substitute', base_url='https://provider.test/v1',
         model='test', transport=httpx.MockTransport(lambda request: pytest.fail('Saved candidate must not be inferred again')))
     with TestClient(restarted, raise_server_exceptions=False) as client:
         follow = client.post('/api/v1/agent/turns', headers=hdr(api, 'restart'), json={
             'elder_id': api[3]['elder']['elder_id'], 'client_turn_id': 'restart',
-            'conversation_id': first['conversation_id'], 'text': '午餐'})
+            'conversation_id': first['conversation_id'], 'text': '二十分钟'})
     assert follow.status_code == 201, follow.text
-    assert follow.json()['data']['actions'][0]['preview']['image_asset_ids'] == [image]
-    assert len(captured.calls) == 1
+    assert follow.json()['data']['actions'][0]['preview']['duration_minutes'] == 20
+    assert follow.json()['data']['actions'][0]['status'] == 'confirmed'
+    assert len(captured.calls) == 0
 
 
 def test_concurrent_same_conversation_change_rejects_stale_draft_merge(real_api):
     api, captured = real_api
-    first = turn(api, text=None, image_asset_ids=[upload(api)], context={'scene': 'meal'}).json()['data']
+    first = turn(api, text='午餐').json()['data']
     def concurrent(request):
         switched = turn(api, key='concurrent-switch', text='今天的日报', conversation_id=first['conversation_id'])
         assert switched.status_code == 201, switched.text
@@ -271,7 +268,7 @@ def test_real_medication_intake_requires_actual_due_task_and_stable_plan(real_ap
     assert prepared.status_code == 201, prepared.text
     data = prepared.json()['data']
     if scenario == 'ambiguous':
-        assert not data['actions'] and '药品' in data['reply']['text']
+        assert not data['actions'] and '哪种药' in data['reply']['text']
         follow = turn(api, key='which-drug', text='既定药0，早上那次。', conversation_id=data['conversation_id'])
         assert follow.status_code == 201, follow.text
         chosen = follow.json()['data']['actions'][0]

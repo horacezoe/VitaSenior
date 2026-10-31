@@ -41,7 +41,7 @@ def inputs(**changes):
     return body, snap
 
 
-def test_text_request_uses_only_current_input_and_server_builds_pending_action():
+def test_text_request_uses_current_input_and_server_builds_complete_daily_action():
     captured = []
     def handler(request):
         captured.append(request)
@@ -57,7 +57,7 @@ def test_text_request_uses_only_current_input_and_server_builds_pending_action()
     assert snap.elder_id not in captured[0].content.decode() and snap.memory.markdown not in captured[0].content.decode()
     assert len(captured) == 1 and plan.chat_provider == 'real' and plan.preference is None
     action, payload = plan.actions[0].action, plan.actions[0].payload
-    assert action.requires_confirmation and action.status == 'pending' and action.type == 'record_diet'
+    assert not action.requires_confirmation and action.status == 'confirmed' and action.type == 'record_diet'
     assert action.action_id.startswith('action_') and payload['elder_id'] == snap.elder_id
     assert payload['checkin']['occurred_at'] == snap.now.isoformat().replace('+00:00', 'Z')
     assert action.preview.foods == ['青菜', '豆腐'] and '【模拟】' not in plan.reply
@@ -78,7 +78,7 @@ def test_image_request_sends_only_authorized_bytes_without_local_path_or_ticket(
 
 
 @pytest.mark.parametrize('with_image', [False, True])
-def test_mimo_non_thinking_text_and_image_keep_structured_pending_actions(with_image):
+def test_mimo_non_thinking_text_and_image_complete_daily_actions(with_image):
     captured = []
     def handler(request):
         sent = json.loads(request.content)
@@ -97,7 +97,7 @@ def test_mimo_non_thinking_text_and_image_keep_structured_pending_actions(with_i
     parts = captured[0]['messages'][1]['content']
     assert [part['type'] for part in parts] == (['text', 'image_url'] if with_image else ['text'])
     assert len(captured) == 1 and plan.chat_provider == 'real'
-    assert plan.actions[0].action.status == 'pending' and plan.actions[0].action.requires_confirmation
+    assert plan.actions[0].action.status == 'confirmed' and not plan.actions[0].action.requires_confirmation
     assert plan.actions[0].payload['checkin']['payload']['foods'] == ['青菜', '豆腐']
 
 
@@ -142,7 +142,7 @@ def test_transport_errors_use_existing_error_contract(error):
     response(content='not-json'), response(content='```json\n{}\n```'),
     response(candidate(elder_id='other')), response(candidate(action_id='model-action')),
     response(candidate(foods=[' '])), response(candidate(foods=['x'*81])),
-    response(candidate(intent='record_medication')), response(candidate(meal_slot='dinner')),
+    response(candidate(intent='record_medication')),
     response(finish='length'), response(message={'tool_calls': [{'function': {'name': 'write_sql'}}]}),
     response(content='{"intent":"diet","intent":"unsupported"}'),
     httpx.Response(200, json={'choices': []}),
@@ -161,14 +161,20 @@ def test_oversized_response_is_bounded_before_parsing():
 
 @pytest.mark.parametrize('intent', ['clarify', 'unsupported'])
 def test_unclear_or_unsupported_model_intent_has_no_actions(intent):
-    plan = provider(lambda request: response(candidate(intent=intent))).plan(*inputs())
+    plan = provider(lambda request: response(candidate(intent=intent, foods=[], food_groups=[]))).plan(*inputs())
     assert plan.actions == () and plan.preference is None and plan.chat_provider == 'real'
 
 
-def test_ambiguous_meal_is_asked_instead_of_inferred_from_model():
+def test_missing_meal_is_inferred_from_local_time():
     body, snap = inputs()
     plan = provider(lambda request: response()).plan(body.model_copy(update={'text': '我吃了青菜'}), snap)
-    assert not plan.actions and '早餐' in plan.reply and plan.chat_provider == 'real'
+    assert plan.actions[0].action.preview.meal_slot == 'lunch'
+    assert plan.actions[0].action.status == 'confirmed' and '吗' not in plan.reply
+
+
+def test_explicit_meal_overrides_a_contradictory_model_slot():
+    plan = provider(lambda request: response(candidate(meal_slot='dinner'))).plan(*inputs())
+    assert plan.actions[0].action.preview.meal_slot == 'lunch'
 
 
 @pytest.mark.parametrize('text', ['我吃药了', '修改档案', '运动20分钟', '昨天午餐吃了豆腐'])

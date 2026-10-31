@@ -198,8 +198,8 @@ def run():
                            body={'code': binding['code'], 'relationship': '子女'})
             image = upload(server, owner, elder, raw, mime)
             for index, (mode, text, images) in enumerate([
-                    ('text', '今天早餐吃了鸡蛋和全麦面包，请准备记录', []),
-                    ('image', '这是今天午餐的餐食照片，请识别并准备记录', [image['asset_id']])]):
+                    ('text', '今天早餐吃了鸡蛋和全麦面包，先让我核对再保存', []),
+                    ('image', '这是今天午餐的餐食照片，先让我核对再保存', [image['asset_id']])]):
                 body = {'elder_id': elder, 'client_turn_id': 'network-'+mode, 'text': text, 'image_asset_ids': images}
                 start = time.monotonic()
                 pending = server.request('/api/v1/agent/turns', token=owner, key='turn-'+mode, body=body, expected=201)

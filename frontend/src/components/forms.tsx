@@ -184,6 +184,12 @@ export function PlanFields({
           <option value="after_meal">餐后安排</option>
         </select>
       </Field>
+      <p className="muted">
+        {schedule.mode === "fixed"
+          ? "固定时间按北京时间生成提醒；打开应用后可在首页「今日记录核对」查看并听取。"
+          : "餐后时间从对应餐食的实际打卡时间起算。尚未记录该餐时，系统会等待，不会猜测用餐或提醒时间。"}
+        提醒不等于已服药，实际服用后请再核对记录。
+      </p>
       {schedule.slots.map((slot, index) => (
         <div key={slot.slot_id} className="plan-slot">
           <div className="form-grid">

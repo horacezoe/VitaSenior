@@ -97,12 +97,12 @@ def run():
             elder = seed['elder']['elder_id']
             requests = []
             if args.mode != 'image':
-                requests.append(('text', '今天早餐吃了鸡蛋和全麦面包，请准备记录', []))
+                requests.append(('text', '今天早餐吃了鸡蛋和全麦面包，先让我核对再保存', []))
             if args.mode != 'text':
                 asset = checked('POST', '/api/v1/media', 201,
                     headers={**headers['elder'], 'Idempotency-Key': 'live-upload'},
                     data={'elder_id': elder, 'purpose': 'meal'}, files={'file': ('demo-meal', raw, mime)})
-                requests.append(('image', '这是今天午餐的餐食照片，请识别并准备记录', [asset['asset_id']]))
+                requests.append(('image', '这是今天午餐的餐食照片，先让我核对再保存', [asset['asset_id']]))
             for index, (mode, text, images) in enumerate(requests):
                 start = time.monotonic()
                 body = {'elder_id': elder, 'client_turn_id': 'live-'+mode, 'text': text, 'image_asset_ids': images}

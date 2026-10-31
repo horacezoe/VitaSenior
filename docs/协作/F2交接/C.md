@@ -1,5 +1,31 @@
 # F2 C：真实多意图对话与澄清工作流
 
+## 2026-11-01：日常对话内部优化（覆盖下文历史确认口径）
+
+用户最新授权：信息足够就完成日常记录，减少餐次追问和重复确认；用小孩形象的数字人陪老人聊健康生活，并在系统提示词头部加入当前对话时间。另明确要求所有后端接口保持不变。
+
+- **接口冻结**：未修改 routers、公共 schemas/enums、models、contracts、core、composition/main、依赖或 OpenAPI。只调整 providers 的私有模型/提示词及 AgentService 内部执行策略，继续沿用 typed ports、原事务与幂等入口。
+- **餐次推断**：用户说明优先，其次当前这餐已知信息，再按服务端 UTC+8 时间推断：05:00–10:59 早餐、11:00–16:59 午餐、其他晚餐。多轮补充跨过分界时保留首轮餐次和发生时间，用户更正优先。模型自行给出的冲突餐次不覆盖用户说明。
+- **少问、顺手记**：真实饮食/已完成运动在必要事实齐全后直接执行现有 CheckinPort，动作 `confirmed`、来源 `agent_confirmed` 沿用原协议；本人的生活报告承担这次记录的表达。只有用户要求先核对时等待确认，支持“好呀、对、就这样”。模糊图片、没有说出的运动时长、尚未完成的行为不虚构。用药和档案修改仍保留必要核对。
+- **上下文续接**：原先只转发最近六轮中的 chat/ingredient，现改为最近八轮内的日常交流、饮食、运动及澄清文字，仍按 actor + elder + conversation 隔离并限制长度。保留未完成任务及已知食物/餐次/时长，短暂闲聊不丢失草稿；取消、换话题、过期按真实状态处理。
+- **保存后补充/更正**：现有 `request_json['_workflow']` 内保存最近一次日常记录结果，十分钟内可通过明确补充/更正续接。调用既有 CheckinUpdate + CheckinPort 更新同一记录，保留原 ID/时间并校验版本；重试不重复建记录，外部修改或取消导致的冲突不被覆盖。不新增表、迁移或公共字段。
+- **提示词与话术**：逐轮注入真实当地时间；角色为“小银龄，一个小孩形象的数字人”。短句、生活化、尊重老人；不对用户说“候选、草稿、业务”等术语，也不为了流程重复要求明确确认。饮食/运动完成回复由服务端根据真正执行的计划形成，失败事务不会返回保存成功。
+
+新回归文件：`backend/tests/agent/test_daily_dialogue_completion.py`；既有 pending 专项明确使用“先让我核对再保存”，同时保留真实工厂默认直接完成、ASR+截图确认、幂等、跨会话隔离、失败回滚与 TTS 降级验证。手动付费探测脚本同步适配可选核对路径，本轮不运行付费请求。
+
+实际验证（当前 worktree 的 backend 目录，D 盘既有 Python 3.13.9 虚拟环境）：
+
+```text
+python -m pytest tests -q --tb=short --maxfail=1 --basetemp=.pytest_cache/daily-dialogue-final-05
+606 passed, 42 deselected, 1 warning in 97.45s
+python -m app.tools.export_contract --check
+python -m app.tools.check_architecture
+```
+
+42 项为已有 F0 阶段筛选，1 项为已有 Starlette/httpx 弃用警告。最初全量运行 601 passed / 2 failed，失败是两项仍固定要求 pending 的旧场景；真实工厂场景改为验证默认直接完成，音频确认专项改为用户主动要求先核对，随后定向 38 项通过并完成上述全量复验。OpenAPI 与仓库原契约一致，SHA-256 为 `6c1e8d96bfe881605d5d7ffd99a4da93b52d0682c01dbda4be9f9629d8e7f500`。全部供应商调用为测试替身；未做真实模型、摄像头/麦克风和音色听感验收。修改未提交。
+
+以下为历史交付记录，其“必须先说出餐次”“所有日常写入都先 pending”等口径已被本节和最新用户要求覆盖。
+
 2026-10-31（Asia/Hong_Kong）。从指定 `363f6376a63d696ba36b1bc7fc426e8b159dc196` 开始，分支 `backend/f2-understanding`。独立 worktree：`C:/Users/horac/Documents/ChatGPT/hackthon Su2026/VitaSenior-f2-understanding`；F1 的 D 盘工作区/数据未改。开工13:56，主链目标16:56，功能截止17:56。
 
 当前已正常快进合入 **`f2-demo-v4@582e304ef62c831ba7d825654d159b5dfa0ce19f`** 与 B 的 `ad4325a`。用户要求补真实多意图工作流及剩余mock；公共文件仍由A维护。最新交付见本节，以下v2/Flash/受限饮食口径均是历史，不代表当前能力边界。既有发布标签不移动。

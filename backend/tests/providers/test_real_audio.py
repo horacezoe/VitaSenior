@@ -781,7 +781,7 @@ def test_real_factory_wav_asr_camera_confirmation_and_final_speech(tmp_path):
         runtime = client.get("/api/v1/runtime", headers=tokens["elder"]).json()["data"]
         assert runtime["providers"] == {"chat": "real", "asr": "real", "tts": "real"}
         prepared = post("/agent/turns", "prepare", json={"elder_id": elder, "client_turn_id": "prepare",
-            "text": "今天午餐吃了青菜和豆腐"})
+            "text": "今天午餐吃了青菜和豆腐，先让我核对再保存。"})
         assert prepared.status_code == 201, prepared.text
         pending = prepared.json()["data"]
         assert pending["actions"][0]["status"] == "pending"

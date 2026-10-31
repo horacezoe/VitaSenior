@@ -9,7 +9,7 @@ import hashlib
 import json
 import inspect
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import date, timedelta
 
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select, literal_column
@@ -30,7 +30,7 @@ from app.schemas.agent import (
 )
 from app.schemas.common import SourceRef
 from app.schemas.health import (
-    Checkin, CheckinWrite, DietPayload, ExercisePayload, MedicationPayload, DailyReport, DailyTask,
+    Checkin, CheckinWrite, CheckinUpdate, DietPayload, ExercisePayload, MedicationPayload, DailyReport, DailyTask,
     MedicationPlanWrite, PlanUpdate, NotificationEvent,
 )
 from app.schemas.identity import Profile, ProfileUpdate, BindingCode, ChangeDecision
@@ -118,12 +118,16 @@ class AgentService:
         recent = tx.scalars(select(TurnRow).where(
             TurnRow.elder_id == request.elder_id, TurnRow.actor_user_id == actor.user_id,
             TurnRow.conversation_id == conversation_id,
-        ).order_by(literal_column('agent_turns.rowid').desc()).limit(6)).all() if conversation_id else []
+        ).order_by(literal_column('agent_turns.rowid').desc()).limit(8)).all() if conversation_id else []
         history = tuple((item.response_json.get('transcript', '')[:1000], item.response_json['reply']['text'][:400])
-                        for item in reversed(recent) if item.response_json.get('scene') in {'health_qa', 'ingredient_advice'}
-                        and item.response_json.get('providers', {}).get('chat') == 'real')
+                        for item in reversed(recent) if item.response_json.get('scene') in {
+                            'health_qa', 'ingredient_advice', 'meal_checkin', 'exercise_checkin', 'clarify'})
         workflow = previous.request_json.get('_workflow', {}) if previous else {}
         draft = ConversationDraft.model_validate(workflow['draft']) if workflow.get('draft') else None
+        last_record = Checkin.model_validate(workflow['last_record']) if workflow.get('last_record') else None
+        if last_record and (last_record.elder_id != request.elder_id or
+                            last_record.updated_at + timedelta(minutes=10) <= self.clock.now()):
+            last_record = None
         if draft is not None:
             for asset_id in draft.image_asset_ids:
                 self.services.media.get_asset(tx, actor, asset_id)
@@ -146,7 +150,8 @@ class AgentService:
                         profile, tuple(tasks), dict(medication_slots or {}),
                         tuple(tx.scalars(pending).all()), conversation_id=conversation_id,
                         conversation_revision=previous.id if previous else None,
-                        draft=draft, selected_action=selected_plan, active_action_id=active, dialogue_history=history)
+                        draft=draft, selected_action=selected_plan, active_action_id=active,
+                        dialogue_history=history, last_record=last_record)
 
     def record_turn(self, tx: Session, actor: Actor, request: AgentTurnWrite,
                     snapshot: Snapshot, plan: Plan, *, speech: Speech | None = None,
@@ -186,6 +191,8 @@ class AgentService:
         tx.add(row)
         tx.flush()
         public_actions = []
+        last_record = snapshot.last_record if not plan.reset_record_context and plan.scene in {
+            'meal_checkin', 'exercise_checkin', 'health_qa', 'clarify'} else None
         reply = plan.reply
         prefix = "【模拟】" if plan.chat_provider == "mock" else ""
         if plan.supersede_action_id:
@@ -197,6 +204,8 @@ class AgentService:
             if plan.decision_action_id not in snapshot.pending_action_ids and plan.decision_action_id != selected_id:
                 raise AppError(404, "NOT_FOUND", "Action was not part of this snapshot")
             result = self.decide(tx, actor, plan.decision_action_id, ActionDecision(decision=plan.decision_kind))
+            if isinstance(result.result, Checkin) and result.result.type in {'diet', 'exercise'}:
+                last_record = result.result
             old_action = tx.get(ActionRow, plan.decision_action_id)
             public_actions.append(TypeAdapter(Action).validate_python({**old_action.payload_json['public'], "status": result.status}))
             reply = prefix + result.reply.text
@@ -217,16 +226,22 @@ class AgentService:
             tx.add(action)
             tx.flush()
             if not public.requires_confirmation:
-                if public.type not in {"create_binding_code", "query_report", "decide_change", "respond_notification"}:
+                if public.type not in {"record_diet", "record_exercise", "create_binding_code", "query_report", "decide_change", "respond_notification"}:
                     raise AppError(422, "VALIDATION_ERROR", "Writes require explicit confirmation")
                 direct = self._execute(tx, actor, action, None)
                 action.status = "confirmed"
                 action.result_json = direct.model_dump(mode="json", exclude_unset=True)
+                public = TypeAdapter(Action).validate_python({
+                    **TypeAdapter(Action).dump_python(public, mode='json', exclude_unset=True), 'status': 'confirmed'})
+                if isinstance(direct.result, Checkin) and direct.result.type in {'diet', 'exercise'}:
+                    last_record = direct.result
                 if isinstance(direct.result, BindingCode):
                     reply = f"{prefix}您的绑定码是{direct.result.code}，请仅分享给要绑定的家人。"
                 elif isinstance(direct.result, DailyReport):
                     reply = prefix + direct.result.summary_text
             public_actions.append(public)
+        row.request_json = {**row.request_json, '_workflow': {
+            **private_state, 'last_record': last_record.model_dump(mode='json') if last_record else None}}
         if plan.preference:
             # Preference only comes from a validated provider plan for an explicit
             # statement; no memory inference from a single meal/photo.
@@ -294,7 +309,7 @@ class AgentService:
             if decision.amendments is not None:
                 raise AppError(422, "VALIDATION_ERROR", "Cancellation cannot contain amendments")
             result = ActionResult(action_id=row.id, status="cancelled", result=None,
-                                  reply=Reply(text="已取消，没有执行该动作。"))
+                                  reply=Reply(text="好，那这条就不记了。"))
         else:
             result = self._execute(tx, actor, row, decision)
         # Last, after successful tool validation/execution. The caller owns commit.
@@ -311,6 +326,10 @@ class AgentService:
                 body = TypeAdapter(CheckinWrite).validate_python(payload['checkin'])
                 if kind != 'record_' + body.type:
                     raise AppError(422, "VALIDATION_ERROR", "Checkin type differs from action")
+                if payload.get('checkin_id'):
+                    if kind not in {'record_diet', 'record_exercise'}:
+                        raise ValueError('Medication cannot be revised by conversation inference')
+                    CheckinUpdate(expected_version=payload['checkin_version'], payload=body.payload)
             elif kind == "update_profile":
                 ProfileUpdate.model_validate(payload['update'])
             elif kind == "create_medication_plan":
@@ -366,7 +385,14 @@ class AgentService:
             except TypeError as exc:
                 raise AppError(501, "MODULE_NOT_IMPLEMENTED",
                                "Checkin adapter must implement the trusted source parameter") from exc
-            output = writer(tx, actor, row.elder_id, body, source="agent_confirmed")
+            if payload.get('checkin_id'):
+                if body.type not in {'diet', 'exercise'}:
+                    raise AppError(422, 'VALIDATION_ERROR', 'Only daily diet/exercise records can be continued')
+                update = CheckinUpdate(expected_version=payload['checkin_version'],
+                                       occurred_at=body.occurred_at, payload=body.payload)
+                output = writer(tx, actor, row.elder_id, update, checkin_id=payload['checkin_id'], source='agent_confirmed')
+            else:
+                output = writer(tx, actor, row.elder_id, body, source="agent_confirmed")
             if output.source != "agent_confirmed":
                 raise AppError(502, "PROVIDER_ERROR", "Checkin adapter did not preserve confirmed provenance")
         elif row.type == "update_profile":
@@ -423,4 +449,4 @@ class AgentService:
         if isinstance(output, (Checkin, Profile, DailyReport)) and output.elder_id != row.elder_id:
             raise AppError(502, "PROVIDER_ERROR", "Business port returned another elder's resource")
         return ActionResult(action_id=row.id, status="confirmed", result=output,
-                            reply=Reply(text="已确认，业务服务已成功处理。"))
+                            reply=Reply(text="好呀，已经帮您记好了。" if isinstance(output, Checkin) else "好，已经帮您处理好了。"))

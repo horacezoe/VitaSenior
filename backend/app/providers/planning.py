@@ -14,7 +14,7 @@ from typing import Protocol, Literal
 from pydantic import BaseModel, ConfigDict, Field, AwareDatetime
 
 from app.schemas.agent import AgentTurnWrite, Action, MemoryDocument
-from app.schemas.health import DailyTask
+from app.schemas.health import Checkin, DailyTask
 from app.schemas.identity import Profile
 
 
@@ -47,6 +47,12 @@ class ConversationDraft(BaseModel):
     image_asset_ids: list[str] = Field(default_factory=list, max_length=3)
     activity: str | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    medication_name: str | None = None
+    # A user can still ask to review before saving. Ordinary daily reports do
+    # not need a second, ritual confirmation after all facts are available.
+    review_before_save: bool = False
+    checkin_id: str | None = None
+    checkin_version: int | None = Field(default=None, ge=1)
 
 
 @dataclass(frozen=True)
@@ -67,7 +73,11 @@ class Snapshot:
     active_action_id: str | None = None
     report_text: str | None = None
     medication_names: dict[str, str] = field(default_factory=dict)
+    medication_slot_details: dict[str, dict] = field(default_factory=dict)
     dialogue_history: tuple[tuple[str, str], ...] = ()
+    last_record: Checkin | None = None
+    medication_context: tuple[dict, ...] = ()
+    safety_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +102,7 @@ class Plan:
     supersede_action_id: str | None = None
     draft: ConversationDraft | None = None
     active_action_id: str | None = None
+    reset_record_context: bool = False
 
 
 class UnderstandingProvider(Protocol):

@@ -43,7 +43,8 @@ def real_api(api):
 
 def turn(api, key='diet-turn', **changes):
     body = {'elder_id': api[3]['elder']['elder_id'], 'client_turn_id': key,
-            'text': '今天午餐吃了青菜和豆腐', **changes}
+            # These regressions exercise the optional review/confirmation path.
+            'text': '今天午餐吃了青菜和豆腐，先让我核对再保存。', **changes}
     return api[1].post('/api/v1/agent/turns', json=body, headers=hdr(api, key))
 
 

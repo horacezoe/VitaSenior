@@ -52,7 +52,8 @@ def test_env_builds_real_adapter_and_runtime_matches_actual_instance(configured)
             json={'elder_id': seed['elder']['elder_id'], 'client_turn_id': 'configured-turn', 'text': '今天午餐吃了青菜'})
         assert result.status_code == 201, result.text
         assert result.json()['data']['providers']['chat'] == 'real'
-        assert result.json()['data']['actions'][0]['status'] == 'pending'
+        assert result.json()['data']['actions'][0]['status'] == 'confirmed'
+        assert not result.json()['data']['actions'][0]['requires_confirmation']
 
 
 @pytest.mark.parametrize('missing', ['CHAT_API_KEY', 'CHAT_BASE_URL', 'CHAT_MODEL'])

@@ -68,20 +68,21 @@ def run():
             code = server.request(f'/api/v1/elders/{elder}/binding-codes', token=owner, body={}, key='code', expected=201)
             server.request('/api/v1/family-bindings', token=child, body={'code': code['code'], 'relationship': '子女'}, key='bind', expected=201)
             image = upload(server, owner, elder, raw, 'image/jpeg')['asset_id']
-            first_body = {'elder_id': elder, 'client_turn_id': 'photo', 'image_asset_ids': [image], 'context': {'scene': 'meal'}}
+            # Explicitly exercise the optional review path before voice agreement.
+            first_body = {'elder_id': elder, 'client_turn_id': 'photo', 'image_asset_ids': [image],
+                          'text': '这是今天午餐，先让我核对再保存。', 'context': {'scene': 'meal'}}
             first = server.request('/api/v1/agent/turns', token=owner, key='photo', body=first_body, expected=201)
-            assert first['actions'] == [] and first['providers']['chat'] == 'real'
+            assert first['actions'][0]['status'] == 'pending' and first['providers']['chat'] == 'real'
             assert first['reply']['audio_asset_id'] and first['providers']['tts'] == 'real'
-            print('REAL_PHOTO_CLARIFICATION_OK')
+            print('REAL_PHOTO_REVIEW_OK')
         with Server(env) as server:
-            second = server.request('/api/v1/agent/turns', token=owner, key='meal-slot', expected=201, body={
-                'elder_id': elder, 'conversation_id': first['conversation_id'], 'client_turn_id': 'meal-slot',
-                'text': '午餐。', 'image_asset_ids': [image]})
+            second = server.request('/api/v1/agent/turns', token=owner, key='photo', expected=201, body=first_body)
+            assert second == first
             action = second['actions'][0]
             assert action['status'] == 'pending' and action['preview']['image_asset_ids'] == [image]
-            assert second['providers']['chat'] == 'not_used' and second['providers']['tts'] == 'real'
+            assert second['providers']['chat'] == 'real' and second['providers']['tts'] == 'real'
             assert second['reply']['audio_asset_id']
-            print('REAL_DRAFT_RESTART_AND_MEAL_SLOT_OK')
+            print('REAL_PENDING_RESTART_OK')
             speech = server.request('/api/v1/ai/tts', token=owner, body={'elder_id': elder, 'text': '确认。'})
             assert speech['is_mock'] is False and speech['provider'] == 'real'
             audio = server.request(speech['audio_asset']['content_url'])
