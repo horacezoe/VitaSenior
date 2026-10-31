@@ -70,3 +70,8 @@ def match_sample(sample_identity_key: str) -> dict | None:
     """Legacy fixture reader; HTTP matching reads the persisted community table."""
     sample = SAMPLE_PROFILES.get(sample_identity_key)
     return deepcopy(sample) if sample else None
+
+# Retain the exact old seed only for guarded migration comparisons.
+from app.fixtures.clinical_samples import upgrade_samples
+LEGACY_SAMPLE_PROFILES = deepcopy(SAMPLE_PROFILES)
+SAMPLE_PROFILES = upgrade_samples(LEGACY_SAMPLE_PROFILES)

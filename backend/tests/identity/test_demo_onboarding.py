@@ -83,7 +83,7 @@ def test_onb02_confirms_and_imports_plans_once(demo, fakes):
     profile = confirmed.json()['data']
     assert profile['onboarding_status'] == 'confirmed' and profile['version'] == 2
     assert profile['source'] == 'user_confirmed' and profile['display_name'] == '陈阿姨'
-    assert [c['plans'] for c in medication.imports] == [['演示药品A']]
+    assert [c['plans'] for c in medication.imports] == [['盐酸二甲双胍缓释片']]
     assert history.calls == [{'elder_id': demo.elder_id, 'demo_id': demo.experience['demo_id'], 'days': 14}]
     # The draft is consumed: a second confirm cannot re-import the same plans.
     again = demo.client.post(f'/api/v1/elders/{demo.elder_id}/onboarding/confirm', json=body, headers=hdr(demo.elder, 'confirm-2'))

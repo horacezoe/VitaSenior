@@ -118,7 +118,7 @@ def test_each_persona_auto_matches_and_confirms_consistent_history(env, persona)
             if plan.schedule['mode'] == 'after_meal':
                 meal = next(r for r in records if r.type == 'diet' and r.local_date == record.local_date
                             and r.slot_key == 'lunch')
-                assert record.occurred_at == meal.occurred_at + timedelta(minutes=30)
+                assert record.occurred_at == meal.occurred_at + timedelta(minutes=plan.schedule["slots"][0]["delay_minutes"])
         assert tx.scalar(select(func.count()).select_from(Notification).where(Notification.elder_id == demo['elder_id'])) == 0
         before = len(records)
     # Same key replays; new matches cannot replace a confirmed profile.
@@ -150,9 +150,9 @@ def test_history_follows_exact_retained_plans_with_stable_references(env, change
         assert len(records) == expected
         for record in records:
             row = tx.get(MedicationPlan, record.payload_json['plan_id'])
-            assert row.dose_display == '演示档案中的既定用量'
+            assert row.dose_display in {t['plan']['dose_display'] for t in SAMPLE_PROFILES['community_sample_012']['medication_templates']}
             if change != 'reorder':
-                assert row.name != '演示药品A'
+                assert row.name != SAMPLE_PROFILES['community_sample_012']['medication_templates'][0]['plan']['name']
 
 
 def test_manual_override_survives_refresh_and_restart_without_importing_history(env):
