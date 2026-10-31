@@ -1,7 +1,6 @@
 """Real default composition, real A/B/C, tmp SQLite. No service doubles.
 
-The test-only operation declaration lets us verify before committing activation;
-once registered the same checks also exercise the actual production declarations.
+All operations are registered in the domain capability file; no test override.
 """
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +34,6 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "health"
 def production(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, tzinfo=timezone.utc))
     app = create_app(Settings(data_dir=tmp_path / "production", database_url=None, scanner_enabled=False), clock=clock)
-    app.state.capabilities_declared |= OPERATIONS
     with TestClient(app, raise_server_exceptions=False) as client:
         seed = framework_seed(app.state.sessions, clock)
         tokens = {}
@@ -282,7 +280,7 @@ def test_invalid_legacy_plan_is_rejected_and_can_be_repaired(production):
     assert get(p, "medication-plans")["items"][0]["schedule"]["slots"][0]["slot_id"] == "one"
 
 
-def test_actual_default_registration_enables_core_and_gates_proposal_receipts(production):
+def test_actual_default_registration_enables_all_health_routes(production):
     p = production
     # A fresh default app has no test-only capability override or service bundle.
     app = create_app(p.app.state.settings, clock=p.clock)
@@ -290,14 +288,13 @@ def test_actual_default_registration_enables_core_and_gates_proposal_receipts(pr
         response = client.get("/api/v1/runtime", headers=p.tokens["elder"])
         assert response.status_code == 200, response.text
         runtime = response.json()["data"]["capabilities"]
-        assert all(runtime[name] is True for name in OPERATIONS - {"NOTI03"})
-        assert runtime["NOTI03"] is False
+        assert all(runtime[name] is True for name in OPERATIONS)
         result = client.post(f"/api/v1/elders/{p.elder}/family-reminders",
             headers=headers(p, "gated-receipt", "bound_child"), json={"category": "general", "template_id": "general"})
         assert result.status_code == 201, result.text
         notice_id = result.json()["data"]["notification_id"]
         event = client.post(f"/api/v1/notifications/{notice_id}/events", headers=headers(p, "gated-event"),
             json={"event_id": "held-for-announcement-contract", "event_type": "handled"})
-        assert event.status_code == 501 and event.json()["error"]["code"] == "MODULE_NOT_IMPLEMENTED"
+        assert event.status_code == 200, event.text
         with app.state.sessions() as tx:
-            assert tx.get(Notification, notice_id).task_state == "open"
+            assert tx.get(Notification, notice_id).task_state == "handled"

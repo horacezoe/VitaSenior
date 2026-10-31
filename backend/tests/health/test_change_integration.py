@@ -1,8 +1,7 @@
 """Actual A state machine + B receipts, with explicit media/memory doubles.
 
-The starting proposal is a persisted fixture: A's create currently has a DTO
-field mismatch (B.md). This suite does not claim that creation or device TTS is
-integrated. It verifies the actual transaction boundary after an existing notice.
+The starting proposal is a persisted fixture. This suite isolates receipt and
+transaction behavior; test_notice_http covers the complete default HTTP path.
 """
 from app.core.config import Settings
 from pathlib import Path
