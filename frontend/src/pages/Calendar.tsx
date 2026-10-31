@@ -19,7 +19,7 @@ import {
 import { useSession } from "../state/session";
 import { useData } from "../state/data";
 
-export default function Calendar() {
+export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const { api, elderId, role } = useSession(),
     { revision } = useData();
   const today = localDay(api.now()),
@@ -56,8 +56,8 @@ export default function Calendar() {
         ...report.data.records.medication,
       ]
     : [];
-  return (
-    <Page title="日子里的小积累" subtitle="颜色表示记录进度，不是医学风险评估">
+  const content = (
+    <>
       <Card>
         <div className="calendar-heading">
           <button
@@ -151,6 +151,11 @@ export default function Calendar() {
           )
         )}
       </section>
-    </Page>
+    </>
+  );
+  return embedded ? (
+    <section aria-label="健康日报">{content}</section>
+  ) : (
+    <Page title="健康日报">{content}</Page>
   );
 }

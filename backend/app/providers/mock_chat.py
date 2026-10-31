@@ -104,8 +104,7 @@ class MockUnderstanding:
                                  {"checkin": execution, "task_date": task.date.isoformat(),
                                   "task_plan_version": task.plan_version}))
         if fixture == "binding_code" or text in {"生成绑定码", "给我绑定码"}:
-            return result("binding_code", "将通过家庭绑定服务生成绑定码。",
-                          action("create_binding_code", {}, {}, confirm=False))
+            return result("clarify", "请结束通话后进入设置里的家庭连接，生成并分享绑定码。")
         if fixture == "daily_query" or text in {"今天的日报", "查看日报"}:
             day = local_date(snapshot.now).isoformat()
             return result("daily_query", "将读取今天的真实日报。",

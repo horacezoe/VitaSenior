@@ -72,7 +72,11 @@ export function Notifications() {
     revision,
   );
   useEffect(() => {
-    setItems(resource.data?.items || []);
+    setItems(
+      (resource.data?.items || []).filter((n) =>
+        ["open", "snoozed"].includes(n.task_state),
+      ),
+    );
     setCursor(resource.data?.next_cursor || null);
   }, [resource.data]);
   const more = () =>
@@ -81,7 +85,10 @@ export function Notifications() {
       const page = await api.get<ApiPage<Notification>>(
         elderPath(elderId!, "notifications") + query({ limit: 30, cursor }),
       );
-      setItems((old) => [...old, ...page.items]);
+      setItems((old) => [
+        ...old,
+        ...page.items.filter((n) => ["open", "snoozed"].includes(n.task_state)),
+      ]);
       setCursor(page.next_cursor);
     });
   return (
@@ -214,6 +221,9 @@ export function NotificationCall() {
   } | null>(null);
   const handlingIds = useRef(new Map<string, string>());
   const current = notification || resource.data;
+  const [speechId, setSpeechId] = useState<string | null>(null);
+  const prepared = useRef<string | null>(null),
+    autoStarted = useRef(false);
   useEffect(() => {
     alive.current = true;
     const scope = new AbortController(),
@@ -232,10 +242,44 @@ export function NotificationCall() {
   useEffect(() => {
     if (!resource.data) return;
     setNotification(resource.data);
-    if (resource.data.audio_asset_id)
-      void player
-        .current!.preload(api, resource.data.audio_asset_id)
-        .catch(setError);
+    if (
+      role === "elder" &&
+      ["open", "snoozed"].includes(resource.data.task_state) &&
+      prepared.current !== resource.data.notification_id
+    ) {
+      prepared.current = resource.data.notification_id;
+      const note = resource.data;
+      if (
+        note.kind === "family_voice" &&
+        note.audio_asset_id &&
+        !note.text.startsWith("【模拟】")
+      ) {
+        void player
+          .current!.preload(api, note.audio_asset_id, abort.current.signal)
+          .then(() => {
+            if (alive.current) setSpeechId(note.audio_asset_id);
+          })
+          .catch(setError);
+      } else
+        void api
+          .post<Schemas["TTSResult"]>(
+            "/api/v1/ai/tts",
+            { elder_id: elderId!, text: note.text },
+            `notice-voicedesign-v1-${note.notification_id}`,
+            abort.current.signal,
+          )
+          .then(async (result) => {
+            if (alive.current) {
+              await player.current!.preload(
+                api,
+                result.audio_asset.asset_id,
+                abort.current.signal,
+              );
+              setSpeechId(result.audio_asset.asset_id);
+            }
+          })
+          .catch(setError);
+    }
     if (resource.data.proposal_id)
       void api
         .get<Schemas["ChangeProposal"]>(
@@ -310,7 +354,13 @@ export function NotificationCall() {
     return result.notification;
   }
   const answer = async () => {
-    if (!current?.audio_asset_id || playing) return;
+    if (
+      !current ||
+      !["open", "snoozed"].includes(current.task_state) ||
+      !speechId ||
+      playing
+    )
+      return;
     const attempt = ++playbackAttempt.current;
     setError(null);
     setPlaying(true);
@@ -332,7 +382,7 @@ export function NotificationCall() {
         // actual displayed/answered sequence AND real ended before completion.
         const playback = player.current!.play(
           api,
-          current.audio_asset_id,
+          speechId,
           abort.current.signal,
         );
         const receipts = (async () => {
@@ -382,6 +432,24 @@ export function NotificationCall() {
         setPlaying(false);
     }
   };
+  useEffect(() => {
+    const begin = () => {
+      if (
+        role === "elder" &&
+        speechId &&
+        current &&
+        ["open", "snoozed"].includes(current.task_state) &&
+        !autoStarted.current &&
+        document.visibilityState === "visible"
+      ) {
+        autoStarted.current = true;
+        void answer();
+      }
+    };
+    begin();
+    document.addEventListener("visibilitychange", begin);
+    return () => document.removeEventListener("visibilitychange", begin);
+  }, [speechId, role, current?.task_state]);
   const stopPlayback = () => {
     playbackAttempt.current++;
     player.current?.stop();
@@ -553,7 +621,9 @@ export function NotificationCall() {
           void resource.refresh();
         }}
       />
-      {!current ? (
+      {current && !["open", "snoozed"].includes(current.task_state) ? (
+        <Empty title="这条提醒已处理" text="已从待办列表移除。" />
+      ) : !current ? (
         <Loading />
       ) : (
         <>
@@ -584,7 +654,7 @@ export function NotificationCall() {
               </p>
             </Card>
           </div>
-          {role === "elder" && current.audio_asset_id && (
+          {role === "elder" && speechId && (
             <div className="section">
               <Button
                 icon={playing ? PhoneOff : Phone}
@@ -608,9 +678,12 @@ export function NotificationCall() {
               </p>
             </div>
           )}
-          {!current.audio_asset_id && (
+          {!speechId && (
             <p className="note-card">
-              这次暂时只有完整文字。没有完整播报，不会启动自动生效倒计时。
+              {error
+                ? "本次语音未能准备成功，请核对完整文字。"
+                : "正在准备语音，请稍候。"}{" "}
+              没有完整播报，不会启动自动生效倒计时。
             </p>
           )}
           {caption && (

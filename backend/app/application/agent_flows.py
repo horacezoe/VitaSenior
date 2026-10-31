@@ -1,4 +1,5 @@
 """C orchestration: providers never run while a Session is held."""
+from app.providers.workflow_trace import run_node
 from dataclasses import replace
 import re
 import time
@@ -215,7 +216,7 @@ def turn(auth, body, key):
     if previous is None:
         planning_input, asr_provider = body, 'not_used'
         if content is not None:
-            recognized = state.agent_asr.transcribe(_content_bytes(content), content.mime_type, body.mock_fixture_id)
+            recognized = run_node(auth.request.state.request_id, body.client_turn_id, "asr", lambda: state.agent_asr.transcribe(_content_bytes(content), content.mime_type, body.mock_fixture_id))
             recognized = ASRResult.model_validate(recognized)
             planning_input = body.model_copy(update={'text': recognized.transcript})
             asr_provider = recognized.provider
@@ -232,13 +233,13 @@ def turn(auth, body, key):
         if not _is_mock(state.agent_chat) and remaining() < 20.0:
             raise AppError(504, 'PROVIDER_TIMEOUT', 'Insufficient Agent deadline for understanding', retryable=True)
         try:
-            plan = state.agent_chat.plan(planning_input, snapshot)
+            plan = run_node(auth.request.state.request_id, body.client_turn_id, "understanding", lambda: state.agent_chat.plan(planning_input, snapshot))
             plan = replace(plan, request_hash=request_digest(body), transcript=planning_input.text or '', asr_provider=asr_provider)
             TypeAdapter(AgentTurn.model_fields['scene'].annotation).validate_python(plan.scene)
             for action in plan.actions:
                 TypeAdapter(Action).validate_python(TypeAdapter(Action).dump_python(action.action, mode='json', exclude_unset=True))
             allowed = {'record_diet', 'record_exercise', 'record_medication', 'update_profile',
-                       'create_binding_code', 'query_report', 'decide_change', 'respond_notification'}
+                       'query_report', 'decide_change', 'respond_notification'}
             if not _is_mock(state.agent_chat) and any(a.action.type not in allowed for a in plan.actions):
                 raise ValueError('Real understanding prepared an unsupported action')
         except (ValidationError, TypeError, ValueError) as exc:
@@ -247,7 +248,7 @@ def turn(auth, body, key):
             # A real provider has a 20s total deadline. Do not start another one
             # if it cannot fit the 45s Agent budget; retain the final text instead.
             if _is_mock(state.agent_tts) or remaining() >= 20.0:
-                speech = state.agent_tts.synthesize(plan.reply)
+                speech = run_node(auth.request.state.request_id, body.client_turn_id, "tts", lambda: state.agent_tts.synthesize(plan.reply))
                 speech_provider = _speech_provider(state.agent_tts, speech)
         except AppError as exc:
             if exc.status not in {501, 502, 504}:

@@ -136,14 +136,14 @@ def test_unimplemented_b_write_rolls_back_and_cancel_still_works(api):
 def test_real_binding_tool_and_client_turn_id_conflicts(api):
     result=turn(api,'binding_code')
     assert result.status_code==201,result.text
-    assert result.json()['data']['actions'][0]['status']=='confirmed'
-    assert count(api,BindingCode)==1
+    assert not result.json()['data']['actions']
+    assert count(api,BindingCode)==0
     assert turn(api,'binding_code',key='new-http-key').json()['data']==result.json()['data']
-    assert count(api,BindingCode)==1
+    assert count(api,BindingCode)==0
     different=turn(api,'binding_code',text='不同请求',key='different-body')
     assert different.status_code==409 and different.json()['error']['code']=='IDEMPOTENCY_CONFLICT'
     samekeynewturn=turn(api,'binding_code',client_id='different-client',key='turn-1')
-    assert samekeynewturn.status_code==409 and count(api,BindingCode)==1
+    assert samekeynewturn.status_code==409 and count(api,BindingCode)==0
 
 
 def test_real_asr_and_tts_media_ticket_roundtrip(api):

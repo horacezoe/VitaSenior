@@ -1,3 +1,4 @@
+import { retryNode, logNode } from "../media/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PhoneOff, RotateCcw, Volume2, Mic } from "lucide-react";
@@ -83,11 +84,13 @@ export default function Call() {
       job.ttsId = turn.reply.audio_asset_id || undefined;
       if (!job.ttsId) {
         try {
-          const speech = await api.post<Schemas["TTSResult"]>(
-            "/api/v1/ai/tts",
-            { elder_id: elderId!, text: turn.reply.text },
-            `${job.id}-final-speech`,
-            signal,
+          const speech = await retryNode(job.id, "tts", signal, () =>
+            api.post<Schemas["TTSResult"]>(
+              "/api/v1/ai/tts",
+              { elder_id: elderId!, text: turn.reply.text },
+              `${job.id}-final-speech`,
+              signal,
+            ),
           );
           job.ttsId = speech.audio_asset.asset_id;
         } catch (error) {
@@ -105,7 +108,9 @@ export default function Call() {
     }
     active(signal);
     setMode("speaking");
+    logNode(job.id, "playback", 1, "started");
     await player.current!.play(api, job.ttsId, signal);
+    logNode(job.id, "playback", 1, "succeeded");
     active(signal);
     await new Promise<void>((resolve) => setTimeout(resolve, 400));
     active(signal);

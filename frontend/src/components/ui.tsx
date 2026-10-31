@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -77,18 +77,20 @@ export function Page({
   action?: ReactNode;
   className?: string;
 }) {
-  const { role } = useSession();
+  const navigate = useNavigate();
   return (
     <main className={`page ${className}`}>
       <header className="page-heading">
         {back !== false && (
-          <Link
+          <button
+            type="button"
             className="icon-button back"
-            to={back || (role === "elder" ? "/elder/health" : "/child")}
-            aria-label="返回上一层"
+            onClick={() => navigate(-1)}
+            disabled={window.history.length <= 1}
+            aria-label="返回上一页"
           >
             <ArrowLeft size={23} />
-          </Link>
+          </button>
         )}
         <div>
           <h1>{title}</h1>

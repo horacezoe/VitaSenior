@@ -1,3 +1,4 @@
+import { ApiError } from "../src/api/client";
 import { expect, it, vi } from "vitest";
 import { sendVoiceTurn, type VoiceJob } from "../src/media/turn";
 import type { Api, Schemas } from "../src/api/client";
@@ -156,4 +157,36 @@ it("audio-only fallback sends an empty image list rather than inventing a frame"
   );
   expect(upload).toHaveBeenCalledTimes(1);
   expect(post.mock.calls[0][1].image_asset_ids).toEqual([]);
+});
+
+it("automatically retries a transient Agent failure without re-upload or changing identifiers", async () => {
+  vi.useFakeTimers();
+  try {
+    const upload = vi
+      .fn()
+      .mockResolvedValueOnce(asset("voice"))
+      .mockResolvedValueOnce(asset("frame"));
+    const post = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError(502, "PROVIDER_ERROR", "transient", null, true),
+      )
+      .mockResolvedValue(result);
+    const pending = sendVoiceTurn(
+      { upload, post } as unknown as Api,
+      "elder",
+      job(),
+      {},
+      new AbortController().signal,
+      () => {},
+    );
+    await vi.runAllTimersAsync();
+    expect(await pending).toEqual(result);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[0][1]).toBe(post.mock.calls[1][1]);
+    expect(post.mock.calls[0][2]).toBe(post.mock.calls[1][2]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

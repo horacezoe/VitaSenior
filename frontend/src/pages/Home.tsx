@@ -1,5 +1,7 @@
+import Calendar from "./Calendar";
 import { Link, Navigate } from "react-router-dom";
 import {
+  ShoppingBag,
   ArrowUpRight,
   Bell,
   CalendarDays,
@@ -121,7 +123,7 @@ export function ElderHome() {
         </span>
         <span>
           <strong>我的健康</strong>
-          <small>记录、日历和个人档案</small>
+          <small>健康日报与个人档案</small>
         </span>
         <ArrowUpRight size={21} />
       </Link>
@@ -241,29 +243,11 @@ export function ChildHome() {
           我们一起放在心上。
         </h1>
       </div>
-      <div className="family-picker">
-        <span className="family-avatar">
-          <UserRound size={25} strokeWidth={1.5} />
-        </span>
-        <div>
-          <label htmlFor="elder-selector">正在关心</label>
-          <select
-            id="elder-selector"
-            value={elderId}
-            onChange={(e) => setElder(e.target.value)}
-          >
-            {me?.bound_elders.map((elder) => (
-              <option value={elder.elder_id} key={elder.elder_id}>
-                {elder.display_name}
-                {elder.relationship ? ` · ${elder.relationship}` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Link to="/binding" className="text-button">
-          添加家人
-        </Link>
-      </div>
+      <p>
+        正在关心：
+        {me?.bound_elders.find((e) => e.elder_id === elderId)?.display_name}
+      </p>
+      <Calendar embedded />{" "}
       <ErrorNotice
         error={resource.error}
         retry={() => {
@@ -275,13 +259,6 @@ export function ChildHome() {
       ) : (
         dashboard && (
           <>
-            <section className="section">
-              <div className="section-title">
-                <h2>今天的小日常</h2>
-                <span>{displayDay(dashboard.date).split("星期")[0]}</span>
-              </div>
-              <ProgressTiles progress={dashboard.completion.progress} />
-            </section>
             <Link className="care-entry" to="/care">
               <span className="care-heart">
                 <Heart size={26} strokeWidth={1.5} />
@@ -307,38 +284,12 @@ export function ChildHome() {
                 <small>暂无记录，不代表实际未完成。</small>
               </section>
             )}
-            <section className="section">
-              <div className="section-title">
-                <h2>最近的记录</h2>
-                <Link to="/records">查看全部 →</Link>
-              </div>
-              <Card>
-                {records.length ? (
-                  records
-                    .slice(0, 4)
-                    .map((record) => (
-                      <RecordRow key={record.checkin_id} record={record} />
-                    ))
-                ) : (
-                  <Empty
-                    title="今天还没有新记录"
-                    text="先送一句关心，也是一种陪伴。"
-                  />
-                )}
-              </Card>
-            </section>
             <div className="quiet-links">
               <MenuLink
                 to="/profile"
                 icon={UserRound}
                 title="协助维护"
                 text="档案、用药与提醒设置"
-              />
-              <MenuLink
-                to="/proposals"
-                icon={ShieldCheck}
-                title="修改申请"
-                text="查看送达与家人的决定"
               />
             </div>
           </>
@@ -355,9 +306,10 @@ export function ChildNav() {
         <HeartPulse size={22} />
         <span>家人近况</span>
       </Link>
-      <Link to="/calendar">
-        <CalendarDays size={22} />
-        <span>健康日历</span>
+
+      <Link to="/shop">
+        <ShoppingBag size={22} />
+        <span>虚拟商城</span>
       </Link>
       <Link to="/settings">
         <UserRound size={22} />
@@ -368,73 +320,17 @@ export function ChildNav() {
 }
 
 export function HealthPanel() {
-  const { api, elderId, role } = useSession(),
-    { revision } = useData();
-  const resource = useResource(
-    `health:${api.base}:${role}:${elderId}`,
-    () => api.get<Schemas["Dashboard"]>(elderPath(elderId!, "dashboard")),
-    revision,
-  );
   return (
-    <Page title="我的健康" subtitle="每一天，都有值得记录的小事" back="/elder">
-      <ErrorNotice
-        error={resource.error}
-        retry={() => {
-          void resource.refresh();
-        }}
-      />
-      {resource.data && (
-        <ProgressTiles progress={resource.data.completion.progress} />
-      )}
-      <div className="menu-card">
-        <MenuLink
-          to="/records"
-          icon={HeartPulse}
-          title="健康记录"
-          text="查看、补充与纠正"
-        />
-        <MenuLink
-          to="/calendar"
-          icon={CalendarDays}
-          title="日历与日报"
-          text="看看日常的积累"
-        />
+    <Page title="健康日报">
+      <Calendar embedded />
+      <div className="menu-card section">
         <MenuLink
           to="/profile"
           icon={UserRound}
           title="个人档案"
-          text="已确认的健康信息"
+          text="档案、用药计划与提醒设置"
         />
-        <MenuLink
-          to="/plans"
-          icon={ShieldCheck}
-          title="用药计划"
-          text="依照既定计划，核对记录"
-        />
-        <MenuLink
-          to="/reminders"
-          icon={Bell}
-          title="提醒设置"
-          text="安排适合自己的节奏"
-        />
-        <MenuLink
-          to="/memory"
-          icon={Heart}
-          title="小银龄记得的事"
-          text="查看、纠正与删除"
-        />
-        <MenuLink
-          to="/binding"
-          icon={Phone}
-          title="与家人连接"
-          text="分享四位绑定码"
-        />
-        <MenuLink
-          to="/notifications"
-          icon={Bell}
-          title="家人留言与提醒"
-          text="听听熟悉的关心"
-        />
+        <MenuLink to="/notifications" icon={Bell} title="家人留言与提醒" />
       </div>
     </Page>
   );

@@ -221,7 +221,7 @@ export default function Care() {
             {mode === "template" ? (
               <>
                 <p className="chat-line">{templates[category]}</p>
-                <p className="form-hint">使用预设演示录音，按完整原文播放。</p>
+                <p className="form-hint">按完整原文调用配置的语音合成服务。</p>
               </>
             ) : (
               <>

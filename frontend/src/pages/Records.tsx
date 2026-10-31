@@ -337,7 +337,7 @@ function RecordEditor({
         : await api.post<Checkin>(path, body, keys.for(path, body));
       observe([saved], !original);
       refresh();
-      navigate(`/records?date=${saved.local_date}`, { replace: true });
+      navigate(-1);
     });
   const cancel = () =>
     action.run(async (keys) => {
@@ -348,7 +348,7 @@ function RecordEditor({
         keys.for(path, original.version),
       );
       refresh();
-      navigate(`/records?date=${original.local_date}`, { replace: true });
+      navigate(-1);
     });
   return (
     <>

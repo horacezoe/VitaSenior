@@ -170,9 +170,8 @@ def server_plan(request, snapshot):
         return result('daily_query', snapshot.report_text or '将读取指定日期的真实日报。',
                       action(request, snapshot, 'query_report', {'date': day.isoformat()},
                              {'date': day.isoformat()}, confirm=False))
-    if text in {'生成绑定码', '给我绑定码', '我要绑定码', '绑定家人', '我想绑定家人', '我要绑定家人'}:
-        return result('binding_code', '将为您生成家人绑定码。',
-                      action(request, snapshot, 'create_binding_code', {}, {}, confirm=False))
+    if re.search(r'(绑定|配对)码|绑定家人|连接家人|家庭连接|家人连接', text):
+        return result("clarify", "请结束通话后进入设置里的家庭连接，生成并分享绑定码。")
     if text in {'我喜欢什么', '我的偏好是什么', '你记得我的偏好吗', '你观察到什么规律'}:
         patterns = '规律' in text
         entries = [entry.text for entry in snapshot.memory.entries

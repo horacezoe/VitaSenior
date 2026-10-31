@@ -207,8 +207,8 @@ def test_real_exercise_clarification_confirmation_and_report(real_api):
 def test_binding_profile_and_explicit_memory_use_actual_ports(real_api):
     api, captured = real_api
     binding = turn(api, text='生成绑定码。')
-    assert binding.status_code == 201 and binding.json()['data']['actions'][0]['status'] == 'confirmed'
-    assert '绑定码是' in binding.json()['data']['reply']['text']
+    assert binding.status_code == 201 and not binding.json()['data']['actions']
+    assert '家庭连接' in binding.json()['data']['reply']['text']
     profile = turn(api, key='profile', text='请叫我陈伯。').json()['data']
     action = profile['actions'][0]
     assert action['type'] == 'update_profile' and action['status'] == 'pending'

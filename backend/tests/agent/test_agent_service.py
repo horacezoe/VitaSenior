@@ -139,9 +139,9 @@ def test_existing_stub_is_never_swallowed_as_a_tool_success(h):
     with pytest.raises(AppError) as exc:h.turn(body(h,'daily_query'))
     assert exc.value.status==501 and count(h,AgentTurn)==count(h,AgentAction)==0
     turn=h.turn(body(h,'binding_code','binding'))
-    assert turn.actions[0].status=='confirmed' and h.binding.calls==1
-    assert '0012' in turn.reply.text
-    assert h.turn(body(h,'binding_code','binding'))==turn and h.binding.calls==1
+    assert not turn.actions and h.binding.calls==0
+    assert '家庭连接' in turn.reply.text
+    assert h.turn(body(h,'binding_code','binding'))==turn and h.binding.calls==0
 
 
 def test_provider_phase_has_no_database_write_lock(h):

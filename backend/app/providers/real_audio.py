@@ -23,7 +23,7 @@ from app.schemas.agent import ASRResult
 
 
 class MiMoTTS:
-    """MiMo-V2.5-TTS, one configured preset voice, complete PCM WAV only.
+    """MiMo-V2.5-TTS preset or VoiceDesign, complete PCM WAV only.
 
     ``transport`` is an HTTPX test seam, not an alternate production provider.
     No environment is read here and construction never makes a paid request.
@@ -32,6 +32,8 @@ class MiMoTTS:
     name = "mimo"
     is_mock = False
     MODEL = "mimo-v2.5-tts"
+    DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
+    BOY_VOICE = "清澈温暖的小男孩声音，普通话发音清晰，亲切自然，语速稍慢，耐心陪伴老人，不尖锐、不夸张。"
     ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions"
     MAX_TEXT_CHARS = 200
     MAX_AUDIO_BYTES = 15 * 1024 * 1024
@@ -49,16 +51,17 @@ class MiMoTTS:
         if (not isinstance(api_key, str) or not api_key or not api_key.isascii()
                 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in api_key)):
             raise ValueError("MiMo TTS requires a non-empty ASCII API key without whitespace or controls")
-        if model != self.MODEL:
-            raise ValueError("This adapter supports mimo-v2.5-tts only; legacy mimo-v2-tts is retired")
-        if voice not in self.VOICES:
+        if model not in {self.MODEL, self.DESIGN_MODEL}:
+            raise ValueError("This adapter supports mimo-v2.5-tts and mimo-v2.5-tts-voicedesign")
+        if model == self.MODEL and voice not in self.VOICES:
             raise ValueError("Configure one MiMo-V2.5-TTS preset voice")
         if (not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 20
                 or not math.isfinite(connect_timeout_seconds)
                 or not 0 < connect_timeout_seconds <= min(5, timeout_seconds)):
             raise ValueError("TTS requires a total deadline <=20s and connect timeout <=5s")
         self._api_key = api_key
-        self.model, self.voice = model, voice
+        self.model = model
+        self.voice = (self.BOY_VOICE if voice in {"", "mimo_default", "冰糖"} else voice) if model == self.DESIGN_MODEL else voice
         self.timeout_seconds = timeout_seconds
         self.connect_timeout_seconds = connect_timeout_seconds
         self._transport = transport
@@ -102,8 +105,8 @@ class MiMoTTS:
                         "POST", self.ENDPOINT,
                         headers={"api-key": self._api_key, "Accept": "application/json",
                                  "Accept-Encoding": "identity"},
-                        json={"model": self.model, "messages": [{"role": "assistant", "content": text}],
-                              "audio": {"format": "wav", "voice": self.voice}, "stream": False},
+                        json={"model": self.model, "messages": ([{"role": "user", "content": self.voice}] if self.model == self.DESIGN_MODEL else []) + [{"role": "assistant", "content": text}],
+                              "audio": ({"format": "wav", "optimize_text_preview": False} if self.model == self.DESIGN_MODEL else {"format": "wav", "voice": self.voice}), "stream": False},
                     ) as response:
                         status = response.status_code
                         if status != 200:

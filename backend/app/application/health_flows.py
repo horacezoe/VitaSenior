@@ -76,6 +76,8 @@ def family_reminder(auth, elder_id, body, key):
     if body.template_id and body.template_id not in templates:
         raise AppError(422, "VALIDATION_ERROR", "Unknown reminder template")
     text = body.text or (templates[body.template_id]["text"] if body.template_id else "请收听家人的录音。")
+    if state.settings.tts_provider == "real" and body.template_id and not body.text:
+        text = text.removeprefix("【模拟】")
     title = "家人的关怀提醒"
 
     def persist(operation):
@@ -102,7 +104,7 @@ def family_reminder(auth, elder_id, body, key):
         mime = media.mime_type
     else:
         for sample in json.loads((root / "audio_manifest.json").read_text(encoding="utf-8-sig")):
-            if sample["text"] == text:
+            if state.settings.tts_provider != "real" and sample["text"] == text:
                 audio = (root / sample["file"]).read_bytes()
                 if hashlib.sha256(audio).hexdigest() != sample["sha256"]:
                     raise AppError(502, "PROVIDER_ERROR", "Demo speech integrity check failed")

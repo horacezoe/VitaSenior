@@ -561,7 +561,7 @@ def test_family_access_denial_does_not_call_real_tts(family_audio, account, stat
 def test_real_mode_preserves_family_preset_and_uploaded_recording(family_audio, source):
     app, client, elder, tokens = family_audio
     calls = []
-    app.state.agent_tts._transport = httpx.MockTransport(lambda request: calls.append(request))
+    app.state.agent_tts._transport = httpx.MockTransport(lambda request: (calls.append(request), audio_response(pcm_wav()))[1])
     headers = {**tokens["bound_child"], "Idempotency-Key": "family-source"}
     body = {"category": "general", "template_id": "general"}
     if source == "recording":
@@ -572,7 +572,8 @@ def test_real_mode_preserves_family_preset_and_uploaded_recording(family_audio, 
                 "audio_asset_id": upload.json()["data"]["asset_id"]}
     result = client.post(f"/api/v1/elders/{elder}/family-reminders", headers=headers, json=body)
     assert result.status_code == 201, result.text
-    assert result.json()["data"]["audio_asset_id"] and not calls
+    assert result.json()["data"]["audio_asset_id"]
+    assert len(calls) == (1 if source == "template" else 0)
 
 
 def test_a_proposal_wiring_uses_real_tts_and_waits_for_full_playback(family_audio):
@@ -1011,3 +1012,15 @@ def test_asr_probe_one_substitute_request_no_false_edge_acceptance(monkeypatch, 
     assert result["transcript"] == "这是 HTTP 替身返回的测试转写。"
     assert result["provider"] == "real" and result["is_mock"] is False
     assert result["edge_capture_verified"] is False and KEY not in manifest.read_text(encoding="utf-8")
+
+
+def test_voicedesign_uses_description_and_exact_text_without_preset_or_rewrite():
+    def handler(request):
+        body=json.loads(request.content)
+        assert body['model']==MiMoTTS.DESIGN_MODEL
+        assert body['messages']==[{'role':'user','content':MiMoTTS.BOY_VOICE},{'role':'assistant','content':TEXT}]
+        assert body['audio']=={'format':'wav','optimize_text_preview':False}
+        response=audio_response(pcm_wav()).json();response['model']=MiMoTTS.DESIGN_MODEL
+        return httpx.Response(200,json=response)
+    provider=MiMoTTS(api_key=KEY,model=MiMoTTS.DESIGN_MODEL,voice='mimo_default',transport=httpx.MockTransport(handler))
+    assert provider.synthesize(TEXT).text==TEXT

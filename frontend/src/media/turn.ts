@@ -1,3 +1,4 @@
+import { retryNode, logNode } from "./diagnostics";
 import type { Api, Schemas } from "../api/client";
 
 export type VoiceJob = {
@@ -26,16 +27,22 @@ export async function sendVoiceTurn(
 ): Promise<Schemas["AgentTurn"]> {
   ensureActive();
   if (job.result) return job.result;
-  if (!job.audioId)
-    job.audioId = (
-      await api.upload(elderId, job.audio, "voice_message", signal)
-    ).asset_id;
-  ensureActive();
-  if (job.frame && !job.imageId)
-    job.imageId = (
-      await api.upload(elderId, job.frame, "meal", signal)
-    ).asset_id;
-  ensureActive();
+  logNode(job.id, "upload", 1, "started");
+  try {
+    if (!job.audioId)
+      job.audioId = (
+        await api.upload(elderId, job.audio, "voice_message", signal)
+      ).asset_id;
+    ensureActive();
+    if (job.frame && !job.imageId)
+      job.imageId = (
+        await api.upload(elderId, job.frame, "meal", signal)
+      ).asset_id;
+    ensureActive();
+  } catch (error) {
+    logNode(job.id, "upload", 1, "failed", error);
+    throw error;
+  }
   job.body ||= {
     elder_id: elderId,
     client_turn_id: job.id,
@@ -51,11 +58,14 @@ export async function sendVoiceTurn(
         : {}),
     },
   };
-  job.result = await api.post<Schemas["AgentTurn"]>(
-    "/api/v1/agent/turns",
-    job.body,
-    job.id,
-    signal,
+  logNode(job.id, "upload", 1, "succeeded");
+  job.result = await retryNode(job.id, "agent", signal, () =>
+    api.post<Schemas["AgentTurn"]>(
+      "/api/v1/agent/turns",
+      job.body,
+      job.id,
+      signal,
+    ),
   );
   return job.result;
 }

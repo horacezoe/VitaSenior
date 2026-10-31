@@ -1,3 +1,4 @@
+import Shop from "./pages/Shop";
 import { useEffect, useState } from "react";
 import {
   BrowserRouter,
@@ -71,7 +72,16 @@ function MobileApp() {
           }
         />
         <Route path="/login" element={<Login />} />
+        <Route
+          path="/shop"
+          element={
+            <Guard role="child">
+              <Shop key={location.key} />
+            </Guard>
+          }
+        />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/demo" element={<Settings demoMode />} />
         <Route
           path="/elder"
           element={
@@ -124,7 +134,7 @@ function MobileApp() {
           path="/records"
           element={
             <Guard>
-              <Records />
+              <Navigate to="/calendar" replace />
             </Guard>
           }
         />
@@ -180,7 +190,7 @@ function MobileApp() {
           path="/memory"
           element={
             <Guard>
-              <Memory />
+              <Navigate to="/elder/health" replace />
             </Guard>
           }
         />
