@@ -7,6 +7,7 @@
 - 共同起点：`363f6376a63d696ba36b1bc7fc426e8b159dc196`；B 分支 `backend/f2-audio`，独立 worktree `E:/CUHKSZ/project/vitasenior/.audio-work`。
 - 已正常合入 A `origin/f2/platform@24debddce9f5f2a88ee68f56f6245f7bba5b4c95`，合并提交 `41906d226adef26cbbac58ac6931dd5b1e86d1d8`，零冲突，包含 A 的 `9f46203` 握手和 C 的 `96177dc`。
 - 真实 TTS/实听之后，又正常合入 C `backend/f2-understanding@bb37744`，合并提交 `fe9b2d7a66efb3535a5c5aa2ad3cfa4d2be18f17`，零冲突；包含 C 的 Flash 非思考模式补丁及其回归，B 未自行编辑 C 文件。同步时 A 的远端仍为 24debdd，旧公共断言尚未更新。
+- ASR 独立探测通过后，正常合入 A `origin/f2/platform@0d9d9cc`（`f2-demo-v3`）。A 已集成并实测真实 chat+TTS，修复旧“real_tts 模块不存在”断言；该历史测试阻断已关闭。ASR 配置/工厂仍为 mock，后续由 A 单独接线，不移动既有标签。
 - C 最新交接报告：正常工厂/Uvicorn 的真实文字、餐食照片、确认落库、看板/日报、重启及显式 mock 回退均通过；A 已合入复验。此处是 A/C 的证据，不冒充 B 已重复发起供应商请求。
 - B 自己的改动仅 `providers/real_audio.py`、用户后续明确新增的 `providers/real_tts.py`、`tests/providers/test_real_audio.py`、独立 `tests/providers/probe_real_tts.py` / `probe_real_asr.py` 和本文件。公共/其他领域文件只来自正常 merge，没有由 B 编辑。
 - 测试用临时 SQLite；B 本机演示数据 `backend/data/f2-audio-b`、默认数据库 `vitasenior.sqlite3`，端口 8022。没有操作他人的运行库、重置历史或移动标签。
@@ -84,21 +85,10 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 
 ## 待 A 收口与下一步
 
-1. A 的公共测试 `tests/framework/test_shared_adaptation.py::test_provider_factory_separates_mock_and_real` 仍断言 B 模块不存在（RuntimeError 包含 real_tts.py）。模块现已交付，需由 A 改成有效配置可构造真实实例、非法配置拒启；B 不修改公共断言，也不把错误文案改成旧断言来掩盖阶段变化。
+1. TTS 旧公共断言已由 A 在 0d9d9cc 更新并正常合入，历史 1 failed 不再是当前阻断；B 未改公共测试。新的 ASR 生产接线仍需要 A 同步 ASR 的阶段配置/测试。
 2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
 3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；下一步仅做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。
 4. TTS 后续以 A 的集成复验为准；用户追加 ASR 后，待办改为 A 装配真实 ASR、前端完成一句一轮的音视频采集。C 的真实饮食主链继续复用，不重复实现理解器。
-
-A 的公共测试可将“模块缺失”段替换为真实构造检查（只构造，不调用供应商）：
-
-```python
-real_tts = build_agent_providers(Settings(
-    data_dir=tmp_path, tts_provider="real", tts_api_key="test-key",
-    tts_base_url="https://api.xiaomimimo.com/v1", tts_model="mimo-v2.5-tts",
-))[2]
-assert real_tts.name == "real" and real_tts.is_mock is False
-# 保留缺 key/base/model 拒启断言；非法 endpoint 应为 ValueError。
-```
 
 ## 用户追加 ASR：独立接口已通，待产品接线
 
@@ -122,9 +112,10 @@ result = asr.transcribe(wav_bytes, "audio/wav")  # 无 Session，退出读 UoW �
 ### 实际结果
 
 - `python -X utf8 -m pytest tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/f2-b-asr-with-probe`：**159 passed / 1 warning / 11.36s**，含 TTS 原回归、ASR 成功/新录音不同输出、超时/401/403/429/5xx、无效音频/输出、显式注入 AI01 的媒体鉴权与写锁释放、独立探针门控。pytest 无付费请求。
+- 合入 A 0d9d9cc 后的全量：`python -X utf8 -m pytest tests -q --tb=short --basetemp=.pytest_cache/f2-b-asr-final-all` → **527 passed / 42 deselected / 1 warning / 124.81s**。TTS 旧公共断言失败已关闭；契约与架构检查通过，OpenAPI hash 不变。没有重跑真实 chat/TTS 计费请求或全部手机/前端演练。
 - 独立探针 `--help` 正常；不带 --live 按预期退出 2。
 - **2026-10-31 16:16（Asia/Hong_Kong）**：`python -X utf8 tests/providers/probe_real_asr.py --env-file .env --audio data/f2-audio-b/evidence/20261031T074100Z-7238915d/speech.wav --live` → **B_ASR_WAV_PROBE_OK**，仅一次真实 ASR 请求，耗时 **2.672 秒**，模型 `mimo-v2.5-asr`、provider=real/is_mock=false。
-- 输入是已实听的 13.6 秒 TTS WAV，不是 Edge 麦克风采样；SHA-256 `ee2ef3983781d18405d4f075356f4fd379d41f372ccfe7f3dd98ccd52c8c5728`。实际转写主要句子和末尾日期时间完整，但“银龄”识成同音“银铃”，不能宣称逐字零错。结果位于被忽略的 `data/f2-audio-b/asr-evidence/20261031T081635Z-a3cb0303/evidence.json`，不提交录音或密钥。
+- 输入是已实听的 13.6 秒 TTS WAV，不是 Edge 麦克风采样；SHA-256 `ee2ef3983781d18405d4f075356f4fd379d41f372ccfe7f3dd98ccd52c8c5728`。实际转写主要句子和末尾日期时间完整，但“您好”转为“你好”、“银龄”识成同音“银铃”，不能宣称逐字零错。结果位于被忽略的 `data/f2-audio-b/asr-evidence/20261031T081635Z-a3cb0303/evidence.json`，不提交录音或密钥。
 
 ### A / C / 前端接线
 
