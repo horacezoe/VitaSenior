@@ -69,7 +69,17 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - 现有回归基线（合入 C `11445bb` 之后）：`pytest tests -q` → **361 passed, 42 deselected**；`export_contract --check` →
   `4b7ade26…`；`integration_smoke --strict` → 39/0/0。
 
-## 4. 待办与风险
+## 4. 未验证/未完成（明确记录，不算通过）
+
+| 项 | 说明 |
+| --- | --- |
+| A 未复跑真实供应商调用 | 密钥只在 C 本地；A 用占位凭据验证了"启动 + `/runtime.providers` + 默认 mock 回归"。真实文字 3.8s / 图片 11.8s 来自 C 的隔离探测 |
+| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；A 的工厂已就绪并会在模块缺失时拒绝 `TTS_PROVIDER=real` |
+| 手机 HTTPS / 真实设备播放 | 按用户安排延期；当前只验证到字节与票据，未验证真机 `<audio>` 实听 |
+| P1 接口 | 登出/解绑/删计划/撤销提案/记忆导出/推送均未挂载 |
+| 完整 AC01–AC14 | 未按总计划逐条演练 |
+
+## 5. 待办与风险
 
 | 项 | 负责 | 说明 |
 | --- | --- | --- |
@@ -79,7 +89,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 | HTTPS/真机播放 | 延期 | 排障限时；先交前端可用 API，不做独立验收页 |
 | P1 接口 | 未排期 | 登出/解绑/删计划/撤销提案/记忆导出/推送仍未挂载 |
 
-## 5. 已知边界（不要当缺陷）
+## 6. 已知边界（不要当缺陷）
 
 - AI 全部 mock；`providers` 如实标 mock（接入真实 TTS 后只有 tts 变 real）。
 - 提案语音只有 5 段精确匹配样例；不匹配时保存完整文字、`audio_asset_id=null`、不启动 60 秒窗口。
