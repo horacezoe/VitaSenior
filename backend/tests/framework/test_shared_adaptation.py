@@ -61,7 +61,10 @@ def test_provider_factory_separates_mock_and_real(tmp_path):
         Settings(data_dir=tmp_path, asr_provider="real")
     # A real TTS must refuse to fake it while B's module is absent.
     with pytest.raises(RuntimeError, match="real_tts.py"):
-        build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real"))
+        build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real", tts_api_key="k",
+                                       tts_base_url="https://example.invalid/v1", tts_model="m"))
+    with pytest.raises(ValueError, match="TTS_PROVIDER=real requires"):
+        Settings(data_dir=tmp_path, tts_provider="real")
     with pytest.raises(ValueError, match="TTS_PROVIDER"):
         Settings(data_dir=tmp_path, tts_provider="bogus")
 

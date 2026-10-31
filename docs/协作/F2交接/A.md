@@ -74,12 +74,28 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 | 项 | 说明 |
 | --- | --- |
 | A 侧真实供应商复跑 | ✅ 已复查（用用户提供的 MiMo key，未入库）：`CHAT_PROVIDER=real` → 生产工厂 → HTTP。纯文字 `AGENT01` **201 / 13.9s**，`providers.chat=real`，正确得出午餐+青菜/豆腐/米饭的待确认 `record_diet`；图片链路 **201 / 4.2s**（空白 1×1 图正确返回"无可记录"，没有伪造动作）；伪造 PNG 字节被供应商拒收时**如实 502 `PROVIDER_ERROR`**，不吞错。真实餐食照片的识别数据仍以 C 的探测为准（A 无照片素材） |
-| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；工厂已就绪且缺模块时拒绝 `TTS_PROVIDER=real`。**同一 MiMo key 的模型列表含 `mimo-v2.5-tts` / `mimo-v2.5-asr`**，B 可直接对接，ASR 也可顺带解决 |
+| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；工厂已就绪，`TTS_PROVIDER=real` 缺 `TTS_API_KEY/TTS_BASE_URL/TTS_MODEL` 会拒绝启动，模块缺失时也不会假装。**同一 MiMo key 的模型列表含 `mimo-v2.5-tts` / `mimo-v2.5-asr`**，B 可直接对接，ASR 也可顺带解决。完整握手见 §5.1 |
 | 手机 HTTPS / 真实设备播放 | 按用户安排延期；当前只验证到字节与票据，未验证真机 `<audio>` 实听 |
 | P1 接口 | 登出/解绑/删计划/撤销提案/记忆导出/推送均未挂载 |
 | 完整 AC01–AC14 | 未按总计划逐条演练 |
 
 ## 5. 待办与风险
+
+### 5.1 给 B 的真实 TTS 握手契约（A 侧已就绪）
+
+1. 新增 `app/providers/real_tts.py`，提供模块级 `build(settings) -> TTSProvider`。
+2. 返回对象必须：
+   - 有 `name = "real"`（`AI02` 用它报告来源；名字与 `is_mock` 不一致会 502
+     `Speech provenance differs from the configured provider`）；
+   - `synthesize(text: str, voice_id: str | None = None) -> Speech`，其中
+     `Speech(content: bytes, mime_type: str, duration_ms: int, text: str, is_mock: bool = True)`
+     必须 `is_mock=False`、`text` 与入参**完全一致**（flow 校验，不一致即 502）。
+3. 配置已冻结：`TTS_PROVIDER=real` + `TTS_API_KEY` / `TTS_BASE_URL` / `TTS_MODEL`
+   （可选 `TTS_VOICE`、`TTS_TIMEOUT_SECONDS`）。缺前三项启动直接失败，不会半 mock 半 real。
+4. 可用供应商：MiMo `mimo-v2.5-tts`（同 key，`https://api.xiaomimimo.com/v1`）。
+5. 测试要求：pytest 里用假 transport 固定响应，不打真实计费请求；真实调用走显式 env 门控的探针。
+6. B 交付后 A 验证：`/runtime.providers.tts == "real"`、`AI02` 字节非空且 `is_mock=false`、
+   音频长度合理、`TTS_PROVIDER=mock` 时行为不变；通过后补 FAST-05。
 
 | 项 | 负责 | 说明 |
 | --- | --- | --- |

@@ -19,6 +19,13 @@ class Settings:
     chat_timeout_seconds: float = 20.0
     asr_provider: str = field(default_factory=lambda: os.getenv("ASR_PROVIDER", "mock"))
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "mock"))
+    # Real speech (B's adapter). Same policy as chat: empty by default, and
+    # TTS_PROVIDER=real refuses to boot unless the three connection fields are set.
+    tts_api_key: str = field(default_factory=lambda: os.getenv("TTS_API_KEY", ""))
+    tts_base_url: str = field(default_factory=lambda: os.getenv("TTS_BASE_URL", ""))
+    tts_model: str = field(default_factory=lambda: os.getenv("TTS_MODEL", ""))
+    tts_voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", ""))
+    tts_timeout_seconds: float = 20.0
     web_push_enabled: bool = field(default_factory=lambda: os.getenv("WEB_PUSH_ENABLED", "false").lower() == "true")
     database_url: str | None = field(default_factory=lambda: os.getenv("DATABASE_URL") or None)
     session_hours: int = 48
@@ -42,6 +49,8 @@ class Settings:
             raise ValueError("CHAT_PROVIDER=real requires CHAT_API_KEY, CHAT_BASE_URL and CHAT_MODEL")
         if self.tts_provider not in {"mock", "real"}:
             raise ValueError("TTS_PROVIDER must be 'mock' or 'real'")
+        if self.tts_provider == "real" and not all((self.tts_api_key, self.tts_base_url, self.tts_model)):
+            raise ValueError("TTS_PROVIDER=real requires TTS_API_KEY, TTS_BASE_URL and TTS_MODEL")
         if self.web_push_enabled:
             raise ValueError("Web Push is not implemented in F0")
         if self.scanner_interval <= 0:
