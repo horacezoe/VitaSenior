@@ -11,6 +11,21 @@ class User(Base):
     role: Mapped[str] = mapped_column(String)
     demo_id: Mapped[str] = mapped_column(String, index=True)
     __table_args__ = (CheckConstraint("role IN ('elder','child')"),)
+class CommunityRecord(Base):
+    """Fictional source records, separate from confirmed elder profiles."""
+    __tablename__ = "community_records"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_number: Mapped[str] = mapped_column(String, unique=True)
+    community_name: Mapped[str] = mapped_column(String)
+    sample_json: Mapped[dict] = mapped_column(JSON)
+
+class DemoIdentity(Base):
+    __tablename__ = "demo_identities"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    demo_id: Mapped[str] = mapped_column(String, index=True)
+    phone: Mapped[str] = mapped_column(String, unique=True)
+    community_record_id: Mapped[str | None] = mapped_column(ForeignKey("community_records.id"))
+
 class AuthChallenge(Base):
     __tablename__ = "auth_challenges"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: new_id("challenge"))

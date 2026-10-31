@@ -19,6 +19,7 @@ import {
   useAction,
 } from "../components/ui";
 import { useSession } from "../state/session";
+import DemoPersonaPicker from "../components/DemoPersonaPicker";
 
 const providerLabel = (mode: string) =>
   mode === "real" ? "真实服务" : mode === "mock" ? "演示样例" : "暂未接通";
@@ -45,12 +46,13 @@ export default function Settings({ demoMode = false }: { demoMode?: boolean }) {
     localStorage.getItem("vitasenior.large-text") === "true",
   );
   const pending = useRef<AbortController | null>(null);
+  const [persona, setPersona] = useState(demo?.persona_id || "community_sample_001");
   useEffect(() => () => pending.current?.abort(), []);
   const freshDemo = () =>
     action.run(async () => {
       const controller = new AbortController();
       pending.current = controller;
-      await createDemo(true, controller.signal);
+      await createDemo(true, controller.signal, persona);
       navigate("/login", { replace: true });
     });
   const switchRole = (next: "elder" | "child") => {
@@ -172,6 +174,7 @@ export default function Settings({ demoMode = false }: { demoMode?: boolean }) {
             <section className="form-section">
               <h2>这组演示家庭</h2>
               <dl className="details-list">
+                {demo.persona_name && <div><dt>演示人物</dt><dd>{demo.persona_name}</dd></div>}
                 <div>
                   <dt>老人账号</dt>
                   <dd>{demo.elder_account.phone}</dd>
@@ -191,6 +194,7 @@ export default function Settings({ demoMode = false }: { demoMode?: boolean }) {
             <p className="form-hint">
               创建新演示家庭后，两个身份都需重新登录。原有数据保留。
             </p>
+            <DemoPersonaPicker value={persona} onChange={setPersona} disabled={action.busy} />
             <Button
               variant="secondary"
               loading={action.busy}

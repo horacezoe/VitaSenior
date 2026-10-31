@@ -135,3 +135,15 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - AI 全部 mock；`providers` 如实标 mock（接入真实 TTS 后只有 tts 变 real）。
 - 提案语音只有 5 段精确匹配样例；不匹配时保存完整文字、`audio_asset_id=null`、不启动 60 秒窗口。
 - 单一 FastAPI 进程 + SQLite + 现有扫描器；不引入 Redis/Celery/向量库/通用工作流。
+
+## 7. 社区多人物与自动匹配（2026-11-01）
+
+本轮基线 `4a0c8bc2f19b755eaa2a9a0a7b593119cd5b9465`。工作区已有对话、视频用药、日报相关未提交改动，本轮只在其上追加社区建档功能，不覆盖其他人的修改。
+
+- 同一SQLite新增 community_records、demo_identities，启动和 framework seed 只补种缺失记录。13份完全虚构社区档案（12份慢病及组合、1份无慢病）和1个未建档身份；用户正式档案保留在 elder_profiles。已有表无新增列，旧数据目录可直接启动补建新表，旧账号自动匹配无身份映射时返回 not_found。
+- 新增 `DEMO02 GET /api/v1/demo/personas`，仅提供人物摘要。DEMO01 可传 persona_id，返回 persona_id/persona_name，为独立家庭分配账号并持久关联社区身份。scenario 保留旧值作为兼容字段，实际历史模板跟随人物。
+- ONB01 `{}` 或 `{mode:"auto"}` 按当前账号匹配；manual 创建空草稿。刷新恢复草稿及手工选择。已确认档案拒绝新的匹配/确认请求，原幂等确认可重放。旧 sample_identity_key 脚本受账号映射约束；无映射旧账号仅兼容最初样本。
+- ONB02 仍在同一事务导入档案、计划、历史。HistoryPort 新增可选 `seed: DemoHistorySeed | None`，包含模板键与稳定计划键到已导入实际plan_id的映射；编辑、删除、重复计划跳过其历史。多计划和餐后时段均支持，餐后必须有同日餐食，历史早于确认日，不产生历史通知。
+- 前端登录入口可选人物，首次登录自动查询并进入核对表单，支持信息不符转手工。已确认档案直接回首页。身份照片移出必经流程；原隐藏的演示设置路由不重新开放。
+
+OpenAPI SHA-256：`ee052bddc0403edc6d4db08191cb2aeeac81518bd83a4145b4f339524c83d209`。P0接口46个，表23张。

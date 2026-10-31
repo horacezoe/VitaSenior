@@ -12,6 +12,7 @@ from datetime import datetime, date
 from typing import Protocol, Literal
 from sqlalchemy.orm import Session
 from app.contracts.context import Actor, ElderAccess, WriteScope
+from app.contracts.history import DemoHistorySeed
 from app.contracts.media import GeneratedAudio, MediaContent, SpokenNotice
 from app.schemas.common import SourceRef, Page
 from app.schemas.enums import Category, ProposalStatus, TaskState
@@ -107,4 +108,4 @@ class HistoryPort(Protocol):
     """Unified entry A calls after ONB02 for matched demo drafts. B contributes the
     fixture rows (daily_tasks/checkins, source=demo_seed); C contributes memory
     entries. Deduplicated by demo_id/source_key, so a repeated confirm is a no-op."""
-    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int) -> None: ...
+    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int, seed: DemoHistorySeed | None = None) -> None: ...

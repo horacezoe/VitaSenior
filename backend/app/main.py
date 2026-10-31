@@ -16,6 +16,7 @@ from app.core.uow import UnitOfWork
 from app.composition import build_report_writer, build_agent_providers, compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
+from app.seed import seed_community_records
 from app.services.agent_service import AgentService
 from app.schemas.common import Envelope, ErrorEnvelope, ErrorDetail, Meta
 from app.routers import system, auth, identity, health, agent
@@ -34,6 +35,9 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
         app.state.engine = engine
         app.state.sessions = sessions(engine)
         create_tables(engine)
+        with UnitOfWork(app.state.sessions) as uow:
+            seed_community_records(uow.session)
+            uow.commit()
         try:
             await app.state.scanner.start()
             yield

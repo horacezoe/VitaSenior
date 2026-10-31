@@ -4,6 +4,8 @@
 
 ## 安装
 
+社区建档当前入口：`GET /api/v1/demo/personas` 读取14个人物场景（13份虚构档案及1个未建档身份）；创建演示家庭时传 `persona_id`。老人登录后调用 ONB01 `{mode:"auto"}`，由服务端按已分配账号匹配，ONB02 本人确认后才保存。启动自动在现有SQLite补建 community_records/demo_identities 并补种缺失档案，保留原用户数据。详细接口、兼容与验证见 [社区自动匹配交接](../docs/协作/F2交接/A.md#7-社区多人物与自动匹配2026-11-01)。
+
 F0已验证 Windows / Python 3.13.9，F1另在Windows / Python 3.11.5复验通过。项目声明支持3.11–3.13，其他版本/系统尚未实测。`requirements.lock`固定完整运行及测试依赖。原框架标签为`framework-v1`；本轮业务从`f1-reviewed-v1`共同开始，按[本轮验收说明](../docs/协作/F1验收与开工说明.md)和正式任务单执行。A0完成后合入`f1-shared-v1`。
 
 ```powershell

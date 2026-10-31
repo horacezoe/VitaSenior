@@ -1854,6 +1854,28 @@
             "title": "Pair Entry Url",
             "type": "string"
           },
+          "persona_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Id"
+          },
+          "persona_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Name"
+          },
           "scenario": {
             "const": "diabetes_daily",
             "title": "Scenario",
@@ -1874,9 +1896,71 @@
         "title": "DemoExperience",
         "type": "object"
       },
+      "DemoPersona": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "has_community_record": {
+            "title": "Has Community Record",
+            "type": "boolean"
+          },
+          "persona_id": {
+            "title": "Persona Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "persona_id",
+          "display_name",
+          "conditions",
+          "has_community_record"
+        ],
+        "title": "DemoPersona",
+        "type": "object"
+      },
+      "DemoPersonas": {
+        "additionalProperties": false,
+        "properties": {
+          "is_mock": {
+            "const": true,
+            "default": true,
+            "title": "Is Mock",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoPersona"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DemoPersonas",
+        "type": "object"
+      },
       "DemoWrite": {
         "additionalProperties": false,
         "properties": {
+          "persona_id": {
+            "default": "community_sample_001",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Persona Id",
+            "type": "string"
+          },
           "scenario": {
             "const": "diabetes_daily",
             "default": "diabetes_daily",
@@ -2342,6 +2426,23 @@
           "meta"
         ],
         "title": "Envelope[DemoExperience]",
+        "type": "object"
+      },
+      "Envelope_DemoPersonas_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DemoPersonas"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[DemoPersonas]",
         "type": "object"
       },
       "Envelope_ElderList_": {
@@ -3187,6 +3288,17 @@
       "MatchResult": {
         "additionalProperties": false,
         "properties": {
+          "community_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Name"
+          },
           "draft_id": {
             "title": "Draft Id",
             "type": "string"
@@ -3195,6 +3307,16 @@
             "const": true,
             "title": "Is Mock",
             "type": "boolean"
+          },
+          "match_basis": {
+            "default": "demo_account",
+            "enum": [
+              "demo_account",
+              "manual",
+              "legacy_sample"
+            ],
+            "title": "Match Basis",
+            "type": "string"
           },
           "match_status": {
             "enum": [
@@ -3213,6 +3335,17 @@
           },
           "profile_draft": {
             "$ref": "#/components/schemas/ProfileFields"
+          },
+          "record_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Number"
           }
         },
         "required": [
@@ -3239,15 +3372,28 @@
             ],
             "title": "Face Asset Id"
           },
-          "sample_identity_key": {
-            "minLength": 1,
-            "title": "Sample Identity Key",
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "manual"
+            ],
+            "title": "Mode",
             "type": "string"
+          },
+          "sample_identity_key": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Identity Key"
           }
         },
-        "required": [
-          "sample_identity_key"
-        ],
         "title": "MatchWrite",
         "type": "object"
       },
@@ -7804,6 +7950,144 @@
           }
         },
         "summary": "Demo01"
+      }
+    },
+    "/api/v1/demo/personas": {
+      "get": {
+        "operationId": "DEMO02",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DemoPersonas_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Implemented"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Demo02"
       }
     },
     "/api/v1/elders/{elder_id}/binding-codes": {

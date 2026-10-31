@@ -37,7 +37,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [runtime, setRuntime] = useState<Schemas["Runtime"] | null>(null);
   const [connectionError, setConnectionError] = useState(false);
   const current = useRef({ base, role, token: session?.access_token });
-  const demoRequest = useRef<{ base: string; key: string } | null>(null);
+  const demoRequest = useRef<{ base: string; key: string; personaId: string } | null>(null);
   current.current = { base, role, token: session?.access_token };
   const [demo, setDemo] = useState<Demo | null>(() => {
     try {
@@ -132,13 +132,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(key(base, role), JSON.stringify(value));
     setSession(value);
   };
-  const createDemo = async (resetSessions = false, signal?: AbortSignal) => {
-    if (!demoRequest.current || demoRequest.current.base !== api.base)
-      demoRequest.current = { base: api.base, key: uid("demo") };
+  const createDemo = async (resetSessions = false, signal?: AbortSignal, personaId = "community_sample_001") => {
+    if (!demoRequest.current || demoRequest.current.base !== api.base || demoRequest.current.personaId !== personaId)
+      demoRequest.current = { base: api.base, key: uid("demo"), personaId };
     const request = demoRequest.current;
     const value = await api.post<Demo>(
       "/api/v1/demo/experiences",
-      {},
+      { persona_id: personaId },
       request.key,
       signal,
     );

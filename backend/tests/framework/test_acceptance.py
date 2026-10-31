@@ -53,7 +53,7 @@ def test_fg02_p0_inventory_and_schemas(env):
     operations = [op for item in app.openapi()['paths'].values() for method,op in item.items() if method in {'get','post','put','delete'}]
     ids = [op['operationId'] for op in operations]
     assert set(ids) == expected
-    assert len(ids) == len(set(ids)) == 45
+    assert len(ids) == len(set(ids)) == len(expected)
     for op in operations:
         success = next(v for k,v in op['responses'].items() if k.startswith('2'))
         assert success['content']
@@ -122,7 +122,7 @@ def test_fg03_challenge_ownership_expiry_and_limits(env):
 def test_fg04_tables_foreign_keys_and_uniqueness(env):
     app,client,clock,seed=env
     from app.core.db import Base
-    assert set(Base.metadata.tables) == {'users','auth_sessions','auth_challenges','elder_profiles','family_bindings','binding_codes','media_assets','change_proposals','idempotency_records','medication_plans','daily_tasks','daily_goal_batches','checkins','notifications','notification_events','presence','agent_turns','agent_actions','memory_documents','safety_signals','safety_assessments'}
+    assert set(Base.metadata.tables) == {'users','community_records','demo_identities','auth_sessions','auth_challenges','elder_profiles','family_bindings','binding_codes','media_assets','change_proposals','idempotency_records','medication_plans','daily_tasks','daily_goal_batches','checkins','notifications','notification_events','presence','agent_turns','agent_actions','memory_documents','safety_signals','safety_assessments'}
     with app.state.engine.connect() as conn:
         assert conn.execute(text('PRAGMA foreign_keys')).scalar()==1
         assert conn.execute(text('PRAGMA journal_mode')).scalar()=='wal'

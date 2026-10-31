@@ -26,6 +26,8 @@ export class ApiError extends Error {
 
 const messages: Record<string, string> = {
   UNAUTHENTICATED: "请重新登录后继续。",
+  ONBOARDING_ALREADY_CONFIRMED: "档案已经确认，请返回首页查看。",
+  DEMO_IDENTITY_INVALID: "账号信息已变化，请核对后重新登录。",
   SESSION_EXPIRED: "登录已过期，请重新登录。",
   ELDER_ACCESS_DENIED: "当前账号无法查看这位家人的信息。",
   PROPOSAL_REQUIRED: "请通过修改申请协助家人维护。",

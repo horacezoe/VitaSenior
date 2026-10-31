@@ -15,7 +15,7 @@ from app.services.change_service import ChangeService
 @pytest.fixture
 def env(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))
-    app = create_app(Settings(data_dir=tmp_path / 'db', scanner_enabled=False), clock=clock)
+    app = create_app(Settings(data_dir=tmp_path / 'db', scanner_enabled=False, database_url=None), clock=clock)
     with TestClient(app, raise_server_exceptions=False) as client:
         seed = framework_seed(app.state.sessions, clock)
         yield app, client, clock, seed
@@ -111,7 +111,7 @@ class FakeHistory:
     def __init__(self):
         self.calls = []
 
-    def import_demo_history(self, tx, actor, elder_id, *, demo_id, days):
+    def import_demo_history(self, tx, actor, elder_id, *, demo_id, days, seed=None):
         self.calls.append({'elder_id': elder_id, 'demo_id': demo_id, 'days': days})
 
 class FakeNotifications:

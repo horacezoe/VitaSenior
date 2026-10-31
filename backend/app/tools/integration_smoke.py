@@ -100,7 +100,7 @@ def round_one(run: Run) -> None:
             files={"file": ("face.png", b"\x89PNG\r\n\x1a\n" + b"0" * 64, "image/png")},
             data={"purpose": "face", "elder_id": elder_id})
     matched = run.req(rnd, "ONB01 match draft", "POST", f"/api/v1/elders/{elder_id}/onboarding/match",
-                      headers=hdr(elder, "r1-match"), json={"sample_identity_key": "community_sample_001"})
+                      headers=hdr(elder, "r1-match"), json={"mode": "auto"})
     if matched is None:
         return
     draft = run.body(rnd, "ONB01", matched)

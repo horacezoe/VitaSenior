@@ -9,8 +9,10 @@ medical recommendation, and medication rows carry no invented dosage - they poin
 at a plan index from the imported draft.
 """
 
+from app.fixtures.identity import SAMPLE_PROFILES
+
 HISTORY_DAYS = 14
-SCENARIOS = ("diabetes_daily",)
+SCENARIOS = ("diabetes_daily", *SAMPLE_PROFILES)
 
 def history_template(scenario: str = "diabetes_daily") -> tuple[dict, ...]:
     """Return immutable day rows with day_offset<0 (relative to the confirm day).
@@ -20,6 +22,9 @@ def history_template(scenario: str = "diabetes_daily") -> tuple[dict, ...]:
     """
     if scenario not in SCENARIOS:
         raise ValueError(f"unknown demo scenario: {scenario}")
+    sample = SAMPLE_PROFILES.get(scenario)
+    refs = sample["history_medication"] if sample else [{"plan_index": 0, "slot_id": "morning"}]
+    has_lunch_plan = any(r["slot_id"] == "after_lunch" for r in refs)
     days = []
     for offset in range(-HISTORY_DAYS, 0):
         index = -offset  # 1..14
@@ -27,17 +32,20 @@ def history_template(scenario: str = "diabetes_daily") -> tuple[dict, ...]:
             "day_offset": offset,
             "diet": [
                 {
-                    "meal_slot": "lunch" if index % 2 else "dinner",
+                    "meal_slot": "lunch" if index % 2 or has_lunch_plan else "dinner",
                     "foods": ["青菜", "豆腐", "米饭"] if index % 2 else ["小米粥", "清蒸鱼", "炒时蔬"],
                     "food_groups": ["vegetable", "protein", "staple"],
                     "notes": "演示历史记录",
                 }
             ],
             "exercise": [] if index % 7 == 0 else [
-                {"activity": "散步", "duration_minutes": 20 + (index % 3) * 5, "notes": "演示历史记录"}
+                {"activity": sample["history_activity"] if sample else "散步",
+                 "duration_minutes": (sample["history_minutes"] if sample else 20) + (index % 3) * 5,
+                 "notes": "演示历史记录"}
             ],
             "medication": [
-                {"plan_index": 0, "slot_id": "morning", "intake_status": "taken" if index % 5 else "not_taken"},
+                {**ref, "intake_status": "taken" if (index + position) % 5 else "not_taken"}
+                for position, ref in enumerate(refs)
             ],
         }
         days.append(day)

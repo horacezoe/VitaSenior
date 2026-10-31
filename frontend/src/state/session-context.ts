@@ -17,7 +17,7 @@ export type SessionState = {
   signOut(): void;
   setElder(id: string): void;
   refreshMe(): Promise<void>;
-  createDemo(resetSessions?: boolean, signal?: AbortSignal): Promise<Demo>;
+  createDemo(resetSessions?: boolean, signal?: AbortSignal, personaId?: string): Promise<Demo>;
   changeBase(base: string): void;
 };
 export const SessionContext = createContext<SessionState | null>(null);

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.context import Actor
+from app.contracts.history import DemoHistorySeed
 from app.contracts.ports import AccessPort, MediaPort, MemoryPort
 from app.core.auth import require_elder_access
 from app.core.clock import Clock, HK, UTC, local_date
@@ -221,7 +222,7 @@ class CheckinService:
         """A0 TaskPort entry; composition can share this health-domain instance."""
         return self.tasks(tx, actor, elder_id, day)
 
-    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int) -> None:
+    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int, seed: DemoHistorySeed | None = None) -> None:
         """A0 HistoryPort, housed in the approved B file; composition may share
         this instance as history/checkins/tasks. Explicit demo fixtures only.
         """
@@ -237,9 +238,12 @@ class CheckinService:
         if tx.scalar(select(TaskRow.id).where(TaskRow.source_key == marker)):
             return
         plans = list(tx.scalars(select(PlanRow).where(PlanRow.elder_id == elder_id).order_by(PlanRow.id)))
+        plans_by_id = {plan.id: plan for plan in plans}
+        if seed and any(plan_id not in plans_by_id for plan_id in seed.plan_ids.values()):
+            invalid("History plan does not belong to this elder")
         now = clock_now(self.clock)
         marker_saved = False
-        for template in history_template()[-days:]:
+        for template in history_template(seed.template_key if seed else "diabetes_daily")[-days:]:
             day = local_date(now) + timedelta(days=template["day_offset"])
             saved = {(r.category, r.slot_key): r for r in task_rows(tx, elder_id, day)}
             def add_task(category, key, title, due_at, **kwargs):
@@ -282,16 +286,32 @@ class CheckinService:
                 add_record("exercise", ExercisePayload.model_validate(payload).model_dump(mode="json"),
                     saved["exercise", "daily"], at_local(day, "17:00"), str(index))
             for item in template["medication"]:
-                if len(plans) != 1 or item["plan_index"] >= len(plans):
-                    continue  # no configured medicine, no invented obligations
-                plan = plans[item["plan_index"]]
+                if seed:
+                    plan = plans_by_id.get(seed.plan_ids.get(item["plan_key"]))
+                    if (plan is None or not plan.active or plan.start_date > day
+                            or (plan.end_date is not None and plan.end_date < day)):
+                        continue
+                else:
+                    if len(plans) != 1 or item["plan_index"] >= len(plans):
+                        continue  # legacy callers only justify their singleton plan
+                    plan = plans[item["plan_index"]]
                 slot = next((s for s in plan.schedule["slots"] if s["slot_id"] == item["slot_id"]), None)
-                if slot is None or plan.schedule["mode"] != "fixed":
-                    continue  # fixture doesn't justify guessing another time/plan
+                if slot is None:
+                    continue
+                if plan.schedule["mode"] == "fixed":
+                    due = at_local(day, slot["local_time"])
+                else:
+                    meal = next((r for r in live_records(tx, elder_id, day)
+                                 if r.type == "diet" and r.slot_key == slot["meal_slot"]), None)
+                    if meal is None:
+                        continue  # a meal-relative time requires an actual synthetic meal
+                    due = meal.occurred_at + timedelta(minutes=slot["delay_minutes"])
                 task = add_task("medication", f'{plan.id}:{slot["slot_id"]}', f"演示历史 {plan.name}",
-                    at_local(day, slot["local_time"]), plan_id=plan.id, plan_version=plan.version,
+                    due, plan_id=plan.id, plan_version=plan.version,
                     plan_snapshot={"plan_id": plan.id, "version": plan.version,
-                        "name": plan.name, "dose_display": plan.dose_display, "schedule": plan.schedule},
+                        "name": plan.name, "dose_display": plan.dose_display, "schedule": plan.schedule,
+                        "start_date": plan.start_date.isoformat(),
+                        "end_date": plan.end_date.isoformat() if plan.end_date else None},
                     dose_display=plan.dose_display)
                 payload = MedicationPayload(plan_id=plan.id, slot_id=slot["slot_id"],
                     intake_status=item["intake_status"], notes="演示历史记录").model_dump(mode="json")

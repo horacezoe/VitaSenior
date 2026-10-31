@@ -8,6 +8,9 @@ unimplemented port rolls the whole confirmation back instead of faking success.
 import hashlib
 from app.contracts.bundle import ServiceBundle
 from app.contracts.context import Actor
+from app.contracts.history import DemoHistorySeed
+from app.schemas.health import MedicationPlanWrite
+from app.fixtures.identity import DEFAULT_PERSONA
 from app.contracts.media import MediaContent
 from app.core.auth import authenticate
 from app.core.errors import AppError, unimplemented
@@ -67,11 +70,29 @@ def confirm_onboarding(ctx, elder_id: str, body, key: str) -> dict:
     state = _state(ctx)
     def operation():
         profile, draft = state.identity.confirm_onboarding(ctx.tx, ctx.actor, elder_id, body)
+        imported = []
         if body.medication_plans:
             # B owns medication rows; the plan import commits with the profile.
-            state.services.medication.import_draft(ctx.tx, ctx.actor, elder_id, body.medication_plans)
-        if draft.get("matched") and draft.get("demo_id"):
-            import_demo_history(ctx.tx, state.services, ctx.actor, elder_id, demo_id=draft["demo_id"])
+            imported = state.services.medication.import_draft(ctx.tx, ctx.actor, elder_id, body.medication_plans)
+        if draft.get("match_status") == "matched" and draft.get("demo_id"):
+            # Match exact submitted values to the immutable source draft. Deleted,
+            # edited, reordered and duplicate plans never inherit another plan's history.
+            originals = list(zip(draft.get("medication_template_keys", []),
+                                 draft.get("medication_plan_drafts", [])))
+            plan_ids = {}
+            for submitted, saved in zip(body.medication_plans, imported):
+                data = submitted.model_dump(mode="json")
+                candidates = [(key, original) for key, original in originals
+                              if MedicationPlanWrite.model_validate(original).model_dump(mode="json") == data]
+                submitted_count = sum(p.model_dump(mode="json") == data for p in body.medication_plans)
+                if len(candidates) == 1 and submitted_count == 1:
+                    key, original = candidates[0]
+                    plan_ids[key] = saved.plan_id
+                    originals.remove((key, original))
+            # Pre-upgrade drafts have no stable template keys. They may import
+            # non-medication history, but never guess a medication association.
+            seed = DemoHistorySeed(draft.get("history_key") or DEFAULT_PERSONA, plan_ids)
+            import_demo_history(ctx.tx, state.services, ctx.actor, elder_id, demo_id=draft["demo_id"], seed=seed)
         return profile.model_dump(mode="json")
     return _idempotent(ctx, key=key, status_code=200,
                        body={"elder_id": elder_id, **body.model_dump(mode="json")}, operation=operation)

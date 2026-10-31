@@ -7,7 +7,8 @@ repeated confirm or login imports nothing new.
 from sqlalchemy.orm import Session
 from app.contracts.context import Actor
 from app.core.errors import unimplemented
+from app.contracts.history import DemoHistorySeed
 
 class HistoryService:
-    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int) -> None:
+    def import_demo_history(self, tx: Session, actor: Actor, elder_id: str, *, demo_id: str, days: int, seed: DemoHistorySeed | None = None) -> None:
         unimplemented()

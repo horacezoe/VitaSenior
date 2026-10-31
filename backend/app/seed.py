@@ -8,11 +8,22 @@ from app.core.uow import UnitOfWork
 from app.contracts.context import Actor
 from app.contracts.bundle import ServiceBundle
 from app.fixtures.history import HISTORY_DAYS, history_template
-from app.models.identity import User, ElderProfile, FamilyBinding
+from app.models.identity import User, ElderProfile, FamilyBinding, CommunityRecord
+from app.fixtures.identity import SAMPLE_PROFILES
+from app.contracts.history import DemoHistorySeed
 
 ACCOUNTS = {"elder": "19900000001", "bound_child": "19900000002", "unbound_child": "19900000003", "stranger_elder": "19900000004"}
 
-def import_demo_history(tx, services: ServiceBundle, actor: Actor, elder_id: str, *, demo_id: str, scenario: str = "diabetes_daily") -> None:
+def seed_community_records(tx) -> None:
+    """Only add missing fictional sources; preserve existing records and profiles."""
+    for key, sample in SAMPLE_PROFILES.items():
+        if tx.get(CommunityRecord, key) is None:
+            tx.add(CommunityRecord(id=key, record_number=sample["record_number"],
+                                   community_name=sample["community_name"], sample_json=sample))
+    tx.flush()
+
+
+def import_demo_history(tx, services: ServiceBundle, actor: Actor, elder_id: str, *, demo_id: str, scenario: str = "diabetes_daily", seed: DemoHistorySeed | None = None) -> None:
     """The ONE entry A schedules after a matched ONB02.
 
     Validates the scenario against the fixture, then delegates to the history port
@@ -21,13 +32,15 @@ def import_demo_history(tx, services: ServiceBundle, actor: Actor, elder_id: str
     failure cannot leave a confirmed profile without its imported plans. B/C do
     not need their own audience accounts - they only contribute fixture rows.
     """
-    history_template(scenario)  # raises ValueError on an unknown scenario
-    services.history.import_demo_history(tx, actor, elder_id, demo_id=demo_id, days=HISTORY_DAYS)
+    history_template(seed.template_key if seed else scenario)
+    extra = {"seed": seed} if seed is not None else {}
+    services.history.import_demo_history(tx, actor, elder_id, demo_id=demo_id, days=HISTORY_DAYS, **extra)
 
 def framework_seed(factory, clock: Clock) -> dict:
     result = {}
     with UnitOfWork(factory) as uow:
         tx = uow.session
+        seed_community_records(tx)
         for label, phone in ACCOUNTS.items():
             role = "child" if "child" in label else "elder"
             user = tx.scalar(select(User).where(User.phone == phone))

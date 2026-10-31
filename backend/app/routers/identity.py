@@ -4,10 +4,15 @@ from fastapi.responses import FileResponse
 from app.schemas.common import Envelope, Page
 from app.schemas.enums import ProposalStatus
 from app.routers.dependencies import Auth, Context, Public, access, resource_access, role
-from app.schemas.identity import BindingCode, BindingPreview, BindingPreviewWrite, BindingResult, BindingWrite, ChangeDecision, ChangeProposal, ChangeProposalWrite, ConfirmWrite, DemoExperience, DemoWrite, ElderList, MatchResult, MatchWrite, MediaAsset, Profile, ProfileUpdate
+from app.schemas.identity import BindingCode, BindingPreview, BindingPreviewWrite, BindingResult, BindingWrite, ChangeDecision, ChangeProposal, ChangeProposalWrite, ConfirmWrite, DemoExperience, DemoWrite, DemoPersonas, ElderList, MatchResult, MatchWrite, MediaAsset, Profile, ProfileUpdate
 from app.application import identity_flows as flows
 
 router = APIRouter()
+
+@router.get("/demo/personas", operation_id="DEMO02", response_model=Envelope[DemoPersonas])
+def demo02(ctx: Public):
+    data = ctx.request.app.state.identity.demo_personas(ctx.tx)
+    return ctx.request.app.state.respond(ctx.request, data.model_dump(mode="json"))
 
 @router.post("/demo/experiences", operation_id="DEMO01", response_model=Envelope[DemoExperience], status_code=201)
 def demo01(ctx: Public, body: DemoWrite, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):

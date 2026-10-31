@@ -37,6 +37,15 @@ class LoginResponse(Me):
     expires_at: AwareDatetime
 class DemoWrite(DTO):
     scenario: Literal["diabetes_daily"] = "diabetes_daily"
+    persona_id: str = Field(default="community_sample_001", min_length=1, max_length=80)
+class DemoPersona(DTO):
+    persona_id: str
+    display_name: str
+    conditions: list[str]
+    has_community_record: bool
+class DemoPersonas(DTO):
+    items: list[DemoPersona]
+    is_mock: Literal[True] = True
 class DemoExperience(DTO):
     demo_id: str
     scenario: Literal["diabetes_daily"]
@@ -47,6 +56,8 @@ class DemoExperience(DTO):
     entry_url: str
     pair_entry_url: str
     history_days: Literal[14]
+    persona_id: str | None = None
+    persona_name: str | None = None
 class ProfileFields(DTO):
     display_name: str = Field(min_length=1)
     birth_date: date | None = None
@@ -79,7 +90,9 @@ class ProfileUpdate(DTO):
     expected_version: int = Field(ge=1)
     patch: ProfilePatch
 class MatchWrite(DTO):
-    sample_identity_key: str = Field(min_length=1)
+    mode: Literal["auto", "manual"] = "auto"
+    # Compatibility for demo scripts; known keys must match the account.
+    sample_identity_key: str | None = Field(default=None, min_length=1)
     face_asset_id: str | None = None
 class MatchResult(DTO):
     match_status: Literal["matched", "not_found"]
@@ -87,6 +100,9 @@ class MatchResult(DTO):
     profile_draft: ProfileFields
     medication_plan_drafts: list[MedicationPlanWrite]
     is_mock: Literal[True]
+    match_basis: Literal["demo_account", "manual", "legacy_sample"] = "demo_account"
+    community_name: str | None = None
+    record_number: str | None = None
 class ConfirmWrite(DTO):
     draft_id: str
     profile: ProfileFields

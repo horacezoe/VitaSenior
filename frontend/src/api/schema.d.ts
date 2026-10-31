@@ -1,5 +1,5 @@
 // Generated from backend/contracts/openapi.json. Do not edit.
-// SHA-256 6f7e387356ef3c2f36b01ef4da67af1572bb0acfa07a59d180eafdfc1170b2d7
+// SHA-256 ee052bddc0403edc6d4db08191cb2aeeac81518bd83a4145b4f339524c83d209
 export interface components {
   schemas: {
     "ASRResult": { "is_mock": boolean; "language": string; "provider": string; "transcript": string };
@@ -42,8 +42,10 @@ export interface components {
     "Dashboard": { "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder": components['schemas']["ElderSummary"]; "memory_summary": string; "pending_tasks": Array<components['schemas']["DailyTask"]>; "provider_mode": "mock" | "real"; "recommendations": Array<string>; "risk_assessment": components['schemas']["RiskAssessment"]; "today_records": components['schemas']["Records"] };
     "DeactivatePlanProposal": { "base_version": number; "operation": "deactivate"; "patch": components['schemas']["EmptyPatch"]; "reason"?: string; "target_id": string; "target_type": "medication_plan" };
     "DeliveryState": "pending" | "displayed" | "answered" | "played";
-    "DemoExperience": { "child_account": components['schemas']["Account"]; "demo_id": string; "elder_account": components['schemas']["Account"]; "elder_id": string; "entry_url": string; "history_days": 14; "is_mock": true; "pair_entry_url": string; "scenario": "diabetes_daily" };
-    "DemoWrite": { "scenario"?: "diabetes_daily" };
+    "DemoExperience": { "child_account": components['schemas']["Account"]; "demo_id": string; "elder_account": components['schemas']["Account"]; "elder_id": string; "entry_url": string; "history_days": 14; "is_mock": true; "pair_entry_url": string; "persona_id"?: (string | null); "persona_name"?: (string | null); "scenario": "diabetes_daily" };
+    "DemoPersona": { "conditions": Array<string>; "display_name": string; "has_community_record": boolean; "persona_id": string };
+    "DemoPersonas": { "is_mock"?: true; "items": Array<components['schemas']["DemoPersona"]> };
+    "DemoWrite": { "persona_id"?: string; "scenario"?: "diabetes_daily" };
     "DietAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["RecordDietPreview"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "record_diet" };
     "DietPayload": { "food_groups"?: Array<"vegetable" | "protein" | "staple" | "fruit" | "dairy" | "fat" | "other">; "foods": Array<string>; "image_asset_ids"?: Array<string>; "meal_slot": components['schemas']["MealSlot"]; "notes"?: string; "suggestions"?: Array<string> };
     "DietWrite": { "occurred_at": string; "payload": components['schemas']["DietPayload"]; "task_id"?: (string | null); "type": "diet" };
@@ -64,6 +66,7 @@ export interface components {
     "Envelope_DailyReport_": { "data": components['schemas']["DailyReport"]; "meta": components['schemas']["Meta"] };
     "Envelope_Dashboard_": { "data": components['schemas']["Dashboard"]; "meta": components['schemas']["Meta"] };
     "Envelope_DemoExperience_": { "data": components['schemas']["DemoExperience"]; "meta": components['schemas']["Meta"] };
+    "Envelope_DemoPersonas_": { "data": components['schemas']["DemoPersonas"]; "meta": components['schemas']["Meta"] };
     "Envelope_ElderList_": { "data": components['schemas']["ElderList"]; "meta": components['schemas']["Meta"] };
     "Envelope_EventResult_": { "data": components['schemas']["EventResult"]; "meta": components['schemas']["Meta"] };
     "Envelope_Health_": { "data": components['schemas']["Health"]; "meta": components['schemas']["Meta"] };
@@ -98,8 +101,8 @@ export interface components {
     "HealthAnomaly": { "anomaly_id": string; "assessment_model": string; "basis": "recorded" | "planned"; "date": string; "detail": string; "detected_at": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug"; "revision": number; "status": "active" | "resolved"; "title": string };
     "LoginRequest": { "challenge_id": string; "code": string; "phone": string; "role": components['schemas']["Role"] };
     "LoginResponse": { "access_token": string; "bound_elders": Array<components['schemas']["ElderSummary"]>; "elder_id": (string | null); "expires_at": string; "user": components['schemas']["User"] };
-    "MatchResult": { "draft_id": string; "is_mock": true; "match_status": "matched" | "not_found"; "medication_plan_drafts": Array<components['schemas']["MedicationPlanWrite-Output"]>; "profile_draft": components['schemas']["ProfileFields"] };
-    "MatchWrite": { "face_asset_id"?: (string | null); "sample_identity_key": string };
+    "MatchResult": { "community_name"?: (string | null); "draft_id": string; "is_mock": true; "match_basis"?: "demo_account" | "manual" | "legacy_sample"; "match_status": "matched" | "not_found"; "medication_plan_drafts": Array<components['schemas']["MedicationPlanWrite-Output"]>; "profile_draft": components['schemas']["ProfileFields"]; "record_number"?: (string | null) };
+    "MatchWrite": { "face_asset_id"?: (string | null); "mode"?: "auto" | "manual"; "sample_identity_key"?: (string | null) };
     "Me": { "bound_elders": Array<components['schemas']["ElderSummary"]>; "elder_id": (string | null); "user": components['schemas']["User"] };
     "MealReminder": { "enabled": boolean; "local_time": string; "slot": components['schemas']["MealSlot"] };
     "MealSlot": "breakfast" | "lunch" | "dinner";

@@ -2,17 +2,19 @@ import secrets
 from datetime import timedelta
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from app.models.identity import User, AuthChallenge, AuthSession, ElderProfile, FamilyBinding
+from app.models.identity import User, AuthChallenge, AuthSession, ElderProfile, FamilyBinding, CommunityRecord, DemoIdentity
 from app.core.clock import Clock, local_date
 from app.core.auth import token_hash, require_elder_access
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.contracts.context import Actor
-from app.fixtures.identity import EMPTY_DRAFT, match_sample
+from app.fixtures.identity import EMPTY_DRAFT, DEFAULT_PERSONA, UNMATCHED_PERSONA
+from app.fixtures.history import HISTORY_DAYS
 from app.schemas.health import MedicationPlanWrite
 from app.schemas.identity import (
     Account, CodeRequest, CodeResponse, ConfirmWrite, DemoExperience, DemoWrite, LoginRequest,
     LoginResponse, MatchResult, MatchWrite, Me, Profile, ProfileFields, User as UserDTO, ElderSummary,
+    DemoPersona, DemoPersonas,
 )
 from app.services.identity_views import default_reminder_settings, elder_summary, profile_from_row, version_conflict
 
@@ -62,7 +64,18 @@ class IdentityService:
 
     # ---- DEMO01: independent pair of accounts + an unconfirmed elder draft ----
 
+    def demo_personas(self, tx: Session) -> DemoPersonas:
+        items = [DemoPersona(persona_id=r.id, display_name=r.sample_json["profile"]["display_name"],
+                             conditions=r.sample_json["profile"]["conditions"], has_community_record=True)
+                 for r in tx.scalars(select(CommunityRecord).order_by(CommunityRecord.id))]
+        items.append(DemoPersona(persona_id=UNMATCHED_PERSONA, display_name="新住户（未建档）",
+                                 conditions=[], has_community_record=False))
+        return DemoPersonas(items=items)
+
     def create_demo_experience(self, tx: Session, payload: DemoWrite, *, entry_base: str) -> DemoExperience:
+        record = tx.get(CommunityRecord, payload.persona_id)
+        if record is None and payload.persona_id != UNMATCHED_PERSONA:
+            raise AppError(422, "VALIDATION_ERROR", "Unknown demo persona")
         demo_id = new_id("demo")
         elder_phone = self._allocate_phone(tx)
         child_phone = self._allocate_phone(tx, taken={elder_phone})
@@ -79,6 +92,9 @@ class IdentityService:
         )
         tx.add(elder)
         tx.flush()
+        tx.add(DemoIdentity(user_id=elder_user.id, demo_id=demo_id, phone=elder_phone,
+                            community_record_id=record.id if record else None))
+        tx.flush()
         # No family binding: the demo pair must still authenticate and bind explicitly.
         return DemoExperience(
             demo_id=demo_id, scenario=payload.scenario, is_mock=True,
@@ -88,6 +104,8 @@ class IdentityService:
             entry_url=f"{entry_base}/demo/{demo_id}/elder",
             pair_entry_url=f"{entry_base}/demo/{demo_id}/pair",
             history_days=14,
+            persona_id=payload.persona_id,
+            persona_name=record.sample_json["profile"]["display_name"] if record else "新住户（未建档）",
         )
 
     def _allocate_phone(self, tx: Session, taken: set[str] | None = None) -> str:
@@ -105,17 +123,48 @@ class IdentityService:
     def match_onboarding(self, tx: Session, actor: Actor, elder_id: str, body: MatchWrite) -> MatchResult:
         require_elder_access(tx, actor, elder_id, "self")
         elder = tx.get(ElderProfile, elder_id)
+        if elder.onboarding_status == "confirmed":
+            raise AppError(409, "ONBOARDING_ALREADY_CONFIRMED", "Profile is already confirmed")
         owner = tx.get(User, elder.owner_user_id)
-        sample = match_sample(body.sample_identity_key)
+        identity = tx.get(DemoIdentity, owner.id)
+        if identity and (identity.demo_id != owner.demo_id or identity.phone != owner.phone):
+            raise AppError(409, "DEMO_IDENTITY_INVALID", "Demo account identity changed")
+        record = None
+        basis = "manual" if body.mode == "manual" else "demo_account"
+        if body.mode != "manual":
+            if body.sample_identity_key is not None:
+                basis = "legacy_sample"
+                candidate = tx.get(CommunityRecord, body.sample_identity_key)
+                # Legacy framework/old demo accounts may still use the original sample.
+                # Mapped accounts cannot choose another person's community identity.
+                allowed = identity.community_record_id if identity else DEFAULT_PERSONA
+                if candidate and candidate.id != allowed:
+                    raise AppError(403, "ELDER_ACCESS_DENIED", "Sample does not match this demo identity")
+                record = candidate
+            elif identity and identity.community_record_id:
+                record = tx.get(CommunityRecord, identity.community_record_id)
+        existing = elder.onboarding_draft or {}
+        # Returning to auto mode restores an intentional manual draft too. Only an
+        # explicit switch to manual may replace a matched draft. Versions never mix.
+        if (body.sample_identity_key is None and existing.get("result")
+                and existing.get("profile_version") == elder.version
+                and (body.mode == "auto" or existing.get("result", {}).get("match_basis") == "manual")):
+            return MatchResult.model_validate(existing["result"])
+        sample = record.sample_json if record else None
         matched = sample is not None
         profile_draft = {k: v for k, v in (sample["profile"] if matched else EMPTY_DRAFT).items() if k != "source"}
         plans = []
-        for item in (sample["medication_plans"] if matched else []):
-            data = dict(item)
-            # The sample has no fixed start date; the confirm day anchors it.
-            data["start_date"] = data.get("start_date") or local_date(self.clock.now()).isoformat()
+        templates = sample["medication_templates"] if matched else []
+        for item in templates:
+            data = dict(item["plan"])
+            data["start_date"] = data.get("start_date") or (local_date(self.clock.now()) - timedelta(days=HISTORY_DAYS)).isoformat()
             plans.append(MedicationPlanWrite.model_validate(data))
         draft_id = new_id("draft")
+        result = MatchResult(match_status="matched" if matched else "not_found", draft_id=draft_id,
+                             profile_draft=ProfileFields.model_validate(profile_draft),
+                             medication_plan_drafts=plans, is_mock=True, match_basis=basis,
+                             community_name=record.community_name if record else None,
+                             record_number=record.record_number if record else None)
         elder.onboarding_draft = {
             "draft_id": draft_id,
             "match_status": "matched" if matched else "not_found",
@@ -123,19 +172,23 @@ class IdentityService:
             "face_asset_id": body.face_asset_id,
             "profile_draft": profile_draft,
             "medication_plan_drafts": [p.model_dump(mode="json") for p in plans],
+            "medication_template_keys": [p["template_key"] for p in templates],
+            "history_key": sample["history_key"] if matched else None,
+            "profile_version": elder.version,
+            "result": result.model_dump(mode="json"),
             # Only a real DEMO01 experience (demo_*) may import 14-day history.
             "demo_id": owner.demo_id if owner.demo_id.startswith("demo_") else None,
         }
         tx.flush()
-        return MatchResult(match_status="matched" if matched else "not_found", draft_id=draft_id,
-                           profile_draft=ProfileFields.model_validate(profile_draft),
-                           medication_plan_drafts=plans, is_mock=True)
+        return result
 
     def confirm_onboarding(self, tx: Session, actor: Actor, elder_id: str, body: ConfirmWrite) -> tuple[Profile, dict]:
         """Promote the draft to the confirmed profile. Returns the profile plus the
         draft facts the callers need for cross-domain imports (plans / history)."""
         require_elder_access(tx, actor, elder_id, "self")
         elder = tx.get(ElderProfile, elder_id)
+        if elder.onboarding_status == "confirmed":
+            raise AppError(409, "ONBOARDING_ALREADY_CONFIRMED", "Profile is already confirmed")
         draft = dict(elder.onboarding_draft or {})
         if draft.get("draft_id") != body.draft_id:
             raise AppError(404, "NOT_FOUND", "Draft unavailable")
@@ -149,4 +202,4 @@ class IdentityService:
         elder.updated_at = self.clock.now()
         elder.onboarding_draft = None
         tx.flush()
-        return profile_from_row(elder), {"demo_id": draft.get("demo_id"), "matched": draft.get("match_status") == "matched"}
+        return profile_from_row(elder), draft

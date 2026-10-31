@@ -69,8 +69,8 @@ def main(argv=None) -> int:
         child = login("3. child", demo["child_account"])
         elder_id = demo["elder_id"]
 
-        matched = call("4. match the community sample", "POST", f"/elders/{elder_id}/onboarding/match",
-                       headers=hdr(elder, "match-1"), json={"sample_identity_key": "community_sample_001"}).json()["data"]
+        matched = call("4. auto-match the demo account identity", "POST", f"/elders/{elder_id}/onboarding/match",
+                       headers=hdr(elder, "match-1"), json={"mode": "auto"}).json()["data"]
         call("5. confirm the profile (imports the draft plans)", "POST", f"/elders/{elder_id}/onboarding/confirm",
              headers=hdr(elder, "confirm-1"),
              json={"draft_id": matched["draft_id"], "profile": matched["profile_draft"],
