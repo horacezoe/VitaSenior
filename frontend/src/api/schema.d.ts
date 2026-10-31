@@ -1,5 +1,5 @@
 // Generated from backend/contracts/openapi.json. Do not edit.
-// SHA-256 ee052bddc0403edc6d4db08191cb2aeeac81518bd83a4145b4f339524c83d209
+// SHA-256 57f05061929f81ab9a2b6c4a23dd2d0e590aaed955850031b9a0dbc885dad523
 export interface components {
   schemas: {
     "ASRResult": { "is_mock": boolean; "language": string; "provider": string; "transcript": string };
@@ -75,6 +75,7 @@ export interface components {
     "Envelope_Me_": { "data": components['schemas']["Me"]; "meta": components['schemas']["Meta"] };
     "Envelope_MediaAsset_": { "data": components['schemas']["MediaAsset"]; "meta": components['schemas']["Meta"] };
     "Envelope_MedicationPlan_": { "data": components['schemas']["MedicationPlan"]; "meta": components['schemas']["Meta"] };
+    "Envelope_MedicationRiskCheckResult_": { "data": components['schemas']["MedicationRiskCheckResult"]; "meta": components['schemas']["Meta"] };
     "Envelope_MemoryDocument_": { "data": components['schemas']["MemoryDocument"]; "meta": components['schemas']["Meta"] };
     "Envelope_Notification_": { "data": components['schemas']["Notification"]; "meta": components['schemas']["Meta"] };
     "Envelope_Page_ChangeProposal__": { "data": components['schemas']["Page_ChangeProposal_"]; "meta": components['schemas']["Meta"] };
@@ -98,7 +99,7 @@ export interface components {
     "FixedSchedule": { "mode": "fixed"; "slots": Array<components['schemas']["FixedSlot"]> };
     "FixedSlot": { "local_time": string; "slot_id": string };
     "Health": { "database": "ok" | "unavailable"; "scheduler": "disabled" | "running" | "stopped" | "failed"; "status": "ok" | "degraded" };
-    "HealthAnomaly": { "anomaly_id": string; "assessment_model": string; "basis": "recorded" | "planned"; "date": string; "detail": string; "detected_at": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug"; "revision": number; "status": "active" | "resolved"; "title": string };
+    "HealthAnomaly": { "anomaly_id": string; "assessment_model": string; "basis": "recorded" | "planned"; "date": string; "detail": string; "detected_at": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug" | "drug_profile"; "revision": number; "status": "active" | "resolved"; "title": string };
     "LoginRequest": { "challenge_id": string; "code": string; "phone": string; "role": components['schemas']["Role"] };
     "LoginResponse": { "access_token": string; "bound_elders": Array<components['schemas']["ElderSummary"]>; "elder_id": (string | null); "expires_at": string; "user": components['schemas']["User"] };
     "MatchResult": { "community_name"?: (string | null); "draft_id": string; "is_mock": true; "match_basis"?: "demo_account" | "manual" | "legacy_sample"; "match_status": "matched" | "not_found"; "medication_plan_drafts": Array<components['schemas']["MedicationPlanWrite-Output"]>; "profile_draft": components['schemas']["ProfileFields"]; "record_number"?: (string | null) };
@@ -112,6 +113,8 @@ export interface components {
     "MedicationPlan": { "active": boolean; "dose_display": string; "elder_id": string; "end_date"?: (string | null); "medicine_asset_id"?: (string | null); "name": string; "notes"?: string; "plan_id": string; "schedule": (components['schemas']["FixedSchedule"] | components['schemas']["AfterMealSchedule-Output"]); "start_date": string; "updated_at": string; "version": number };
     "MedicationPlanWrite-Input": { "dose_display": string; "end_date"?: (string | null); "medicine_asset_id"?: (string | null); "name": string; "notes"?: string; "schedule": (components['schemas']["FixedSchedule"] | components['schemas']["AfterMealSchedule-Input"]); "start_date": string };
     "MedicationPlanWrite-Output": { "dose_display": string; "end_date"?: (string | null); "medicine_asset_id"?: (string | null); "name": string; "notes"?: string; "schedule": (components['schemas']["FixedSchedule"] | components['schemas']["AfterMealSchedule-Output"]); "start_date": string };
+    "MedicationRiskCheckResult": { "checked_at": string; "findings"?: Array<components['schemas']["SafetyFinding"]>; "model"?: (string | null); "status": "reviewed" | "insufficient_data" | "unavailable" | "not_configured" };
+    "MedicationRiskCheckWrite": { "expected_version"?: (number | null); "plan": components['schemas']["MedicationPlanWrite-Input"]; "replace_plan_id"?: (string | null) };
     "MedicationWrite": { "occurred_at": string; "payload": components['schemas']["MedicationPayload"]; "task_id": string; "type": "medication" };
     "MemoryAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["MemoryPreview"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "update_memory" };
     "MemoryChange": { "changed": boolean; "version": number };
@@ -159,8 +162,8 @@ export interface components {
     "RiskAssessment": { "level"?: null; "status"?: "not_configured" };
     "Role": "elder" | "child";
     "Runtime": { "capabilities": { [key: string]: boolean }; "mode": "demo"; "providers": { [key: string]: "mock" | "real" | "not_implemented" }; "server_time": string; "timezone": "Asia/Hong_Kong" };
-    "SafetyEvidence": { "id": string; "type": "checkin" | "medication_plan"; "version": number };
-    "SafetyFinding": { "basis": "recorded" | "planned"; "detail": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug"; "title": string };
+    "SafetyEvidence": { "id": string; "type": "checkin" | "medication_plan" | "profile" | "proposed_plan"; "version": number };
+    "SafetyFinding": { "basis": "recorded" | "planned"; "detail": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug" | "drug_profile"; "title": string };
     "SafetyReview": { "findings": Array<components['schemas']["SafetyFinding"]>; "status": "reviewed" | "insufficient_data" };
     "SettingsPatch-Input": { "daily_summary"?: (components['schemas']["TimedReminder"] | null); "exercise"?: (components['schemas']["TimedReminder"] | null); "meals"?: (Array<components['schemas']["MealReminder"]> | null); "voice_enabled"?: (boolean | null) };
     "SettingsPatch-Output": { "daily_summary"?: (components['schemas']["TimedReminder"] | null); "exercise"?: (components['schemas']["TimedReminder"] | null); "meals"?: (Array<components['schemas']["MealReminder"]> | null); "voice_enabled"?: (boolean | null) };

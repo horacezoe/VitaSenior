@@ -170,18 +170,18 @@ class Progress(DTO):
     exercise: ProgressCount
     medication: ProgressCount
 class SafetyEvidence(DTO):
-    type: Literal["checkin", "medication_plan"]
+    type: Literal["checkin", "medication_plan", "profile", "proposed_plan"]
     id: str
     version: int = Field(ge=1)
 class SafetySource(DTO):
     evidence: SafetyEvidence
-    category: Literal["diet", "medication"]
+    category: Literal["diet", "medication", "profile"]
     basis: Literal["recorded", "planned"]
     medicine_id: str | None = None
     label: str
     facts: dict[str, object]
 class SafetyFinding(DTO):
-    kind: Literal["food_drug", "drug_drug"]
+    kind: Literal["food_drug", "drug_drug", "drug_profile"]
     title: str = Field(min_length=1,max_length=100)
     detail: str = Field(min_length=1,max_length=600)
     basis: Literal["recorded", "planned"]
@@ -189,6 +189,21 @@ class SafetyFinding(DTO):
 class SafetyReview(DTO):
     status: Literal["reviewed", "insufficient_data"]
     findings: list[SafetyFinding] = Field(max_length=8)
+class MedicationRiskCheckWrite(DTO):
+    plan: MedicationPlanWrite
+    replace_plan_id: str | None = None
+    expected_version: int | None = Field(default=None, ge=1)
+    @model_validator(mode="after")
+    def replacement_version(self):
+        if (self.replace_plan_id is None) != (self.expected_version is None):
+            raise ValueError("Replacement requires both plan ID and expected version")
+        return self
+class MedicationRiskCheckResult(DTO):
+    status: Literal["reviewed", "insufficient_data", "unavailable", "not_configured"]
+    findings: list[SafetyFinding] = Field(default_factory=list)
+    model: str | None = None
+    checked_at: AwareDatetime
+
 class HealthAnomaly(SafetyFinding):
     anomaly_id: str
     date: date

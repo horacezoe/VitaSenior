@@ -23,7 +23,7 @@ def _snapshot(auth, elder_id, day):
     return ReportInput(profile,memory,report,sources)
 
 def _digest(state,snapshot):
-    return hashlib.sha256(('safety-llm-v2|'+state.settings.chat_model+'|'+report_digest(snapshot)).encode()).hexdigest()
+    return hashlib.sha256(('safety-llm-v3|'+state.settings.chat_model+'|'+report_digest(snapshot)).encode()).hexdigest()
 
 def enriched_report(auth, elder_id, day, *, review_only=False):
     state=auth.request.app.state

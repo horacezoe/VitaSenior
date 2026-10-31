@@ -2581,6 +2581,23 @@
         "title": "Envelope[MedicationPlan]",
         "type": "object"
       },
+      "Envelope_MedicationRiskCheckResult_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MedicationRiskCheckResult"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[MedicationRiskCheckResult]",
+        "type": "object"
+      },
       "Envelope_MemoryDocument_": {
         "additionalProperties": false,
         "properties": {
@@ -3170,7 +3187,8 @@
           "kind": {
             "enum": [
               "food_drug",
-              "drug_drug"
+              "drug_drug",
+              "drug_profile"
             ],
             "title": "Kind",
             "type": "string"
@@ -3844,6 +3862,86 @@
           "start_date"
         ],
         "title": "MedicationPlanWrite",
+        "type": "object"
+      },
+      "MedicationRiskCheckResult": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SafetyFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "status": {
+            "enum": [
+              "reviewed",
+              "insufficient_data",
+              "unavailable",
+              "not_configured"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checked_at"
+        ],
+        "title": "MedicationRiskCheckResult",
+        "type": "object"
+      },
+      "MedicationRiskCheckWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/MedicationPlanWrite-Input"
+          },
+          "replace_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replace Plan Id"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "title": "MedicationRiskCheckWrite",
         "type": "object"
       },
       "MedicationWrite": {
@@ -5597,7 +5695,9 @@
           "type": {
             "enum": [
               "checkin",
-              "medication_plan"
+              "medication_plan",
+              "profile",
+              "proposed_plan"
             ],
             "title": "Type",
             "type": "string"
@@ -5645,7 +5745,8 @@
           "kind": {
             "enum": [
               "food_drug",
-              "drug_drug"
+              "drug_drug",
+              "drug_profile"
             ],
             "title": "Kind",
             "type": "string"
@@ -9601,6 +9702,170 @@
           }
         ],
         "summary": "Noti04"
+      }
+    },
+    "/api/v1/elders/{elder_id}/medication-plan-risk": {
+      "post": {
+        "operationId": "PLAN05",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "elder_id",
+            "required": true,
+            "schema": {
+              "title": "Elder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MedicationRiskCheckWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MedicationRiskCheckResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Implemented"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Plan05"
       }
     },
     "/api/v1/elders/{elder_id}/medication-plans": {

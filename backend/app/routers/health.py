@@ -5,10 +5,16 @@ from app.schemas.common import Envelope, Page
 from app.schemas.enums import Category, TaskState
 from app.routers.dependencies import Auth
 from app.schemas.identity import Dashboard, EventResult
-from app.schemas.health import Calendar, CancelledCheckin, Checkin, CheckinUpdate, CheckinWrite, DailyReport, FamilyReminderWrite, MedicationPlan, MedicationPlanWrite, Notification, NotificationEvent, PlanList, PlanUpdate, Presence, PresenceWrite, ReminderSettings, SettingsUpdate, TaskList
+from app.schemas.health import MedicationRiskCheckWrite, MedicationRiskCheckResult, Calendar, CancelledCheckin, Checkin, CheckinUpdate, CheckinWrite, DailyReport, FamilyReminderWrite, MedicationPlan, MedicationPlanWrite, Notification, NotificationEvent, PlanList, PlanUpdate, Presence, PresenceWrite, ReminderSettings, SettingsUpdate, TaskList
 from app.application.health_flows import perform, family_reminder
 
 router = APIRouter()
+
+@router.post("/elders/{elder_id}/medication-plan-risk", operation_id="PLAN05", response_model=Envelope[MedicationRiskCheckResult])
+def plan05(ctx: Auth, elder_id: str, body: MedicationRiskCheckWrite):
+    from app.application.medication_risk import check_medication_risk
+    return ctx.request.app.state.respond(ctx.request,check_medication_risk(ctx,elder_id,body))
+
 
 @router.get("/elders/{elder_id}/medication-plans", operation_id="PLAN01", response_model=Envelope[PlanList], status_code=200)
 def plan01(ctx: Auth, elder_id: str, active: bool | None = None):
@@ -17,15 +23,28 @@ def plan01(ctx: Auth, elder_id: str, active: bool | None = None):
 
 @router.post("/elders/{elder_id}/medication-plans", operation_id="PLAN02", response_model=Envelope[MedicationPlan], status_code=201)
 def plan02(ctx: Auth, elder_id: str, body: MedicationPlanWrite, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
-    return perform(ctx, service_name="medication", elder_id=elder_id, scope="proposal",
+    response = perform(ctx, service_name="medication", elder_id=elder_id, scope="proposal",
         body=body.model_dump(mode="json"), key=idempotency_key, status=201,
         operation=lambda s, tx, actor, elder: s.medication.apply_change(tx, actor, elder, "create", None, body, None))
+    return _review_saved_plan(ctx,response)
 
 @router.put("/medication-plans/{plan_id}", operation_id="PLAN03", response_model=Envelope[MedicationPlan], status_code=200)
 def plan03(ctx: Auth, plan_id: str, body: PlanUpdate, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]):
-    return perform(ctx, service_name="medication", resource=("plan", plan_id), scope="proposal",
+    response = perform(ctx, service_name="medication", resource=("plan", plan_id), scope="proposal",
         body=body.model_dump(mode="json"), key=idempotency_key,
         operation=lambda s, tx, actor, elder: s.medication.apply_change(tx, actor, elder, "update", plan_id, body.patch, body.expected_version))
+    return _review_saved_plan(ctx,response)
+
+def _review_saved_plan(ctx,response):
+    state=ctx.request.app.state
+    if state.settings.safety_review_enabled and state.report_writer is not None:
+        import json
+        from starlette.background import BackgroundTask
+        from app.application.daily_report import automatic_review
+        from app.core.clock import local_date
+        elder_id=json.loads(response.body)['data']['elder_id']
+        response.background=BackgroundTask(automatic_review,ctx,elder_id,local_date(state.clock.now()))
+    return response
 
 @router.get("/elders/{elder_id}/reminder-settings", operation_id="SET01", response_model=Envelope[ReminderSettings], status_code=200)
 def set01(ctx: Auth, elder_id: str):

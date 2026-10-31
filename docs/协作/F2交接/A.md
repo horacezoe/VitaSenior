@@ -146,4 +146,14 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - ONB02 仍在同一事务导入档案、计划、历史。HistoryPort 新增可选 `seed: DemoHistorySeed | None`，包含模板键与稳定计划键到已导入实际plan_id的映射；编辑、删除、重复计划跳过其历史。多计划和餐后时段均支持，餐后必须有同日餐食，历史早于确认日，不产生历史通知。
 - 前端登录入口可选人物，首次登录自动查询并进入核对表单，支持信息不符转手工。已确认档案直接回首页。身份照片移出必经流程；原隐藏的演示设置路由不重新开放。
 
-OpenAPI SHA-256：`ee052bddc0403edc6d4db08191cb2aeeac81518bd83a4145b4f339524c83d209`。P0接口46个，表23张。
+社区功能首次导出 OpenAPI SHA-256：`ee052bddc0403edc6d4db08191cb2aeeac81518bd83a4145b4f339524c83d209`。并行 PLAN05 用药风险接口加入后的当前契约 SHA-256：`57f05061929f81ab9a2b6c4a23dd2d0e590aaed955850031b9a0dbc885dad523`。已同步前端生成契约；当前P0接口总数47（本轮新增DEMO02，并行新增PLAN05），表总数23。
+
+验证结果（包含工作区并行功能的最新回归）：
+
+- 后端 `python -m pytest -q --tb=short --maxfail=3 --basetemp <新建临时目录>`：677 passed，42 deselected，146.90s。社区新增25项验收包含13份源档案、未匹配身份、权限、重复确认、草稿恢复/重启、多计划删除/修改/重排/重复、餐后记录、失败回滚、原有SQLite补表及旧草稿兼容。
+- `python -m app.tools.integration_smoke --strict`：39 OK，0 pending，0 failed；主链ONB01已改用 `{mode:"auto"}`。`export_contract --check`、`check_architecture` 均通过。
+- 前端 `npm.cmd test`：69 passed；`npm.cmd run build` 和 `npm.cmd run contracts:check` 均通过。
+- 浏览器：许伯伯首次登录自动匹配三种慢病/三项计划，刷新恢复后确认，正式档案显示正确；未建档身份手工填写后进入本人首页；张伯伯自动匹配后转手工，刷新仍保持手工草稿。登录页支持同一人物另建独立演示家庭；旧浏览器保存的无persona_id家庭只按默认人物处理，不妨碍选择其他人物创建新家庭。
+- 测试与浏览器服务均使用独立临时SQLite，未修改已有运行数据库。Windows沙箱内TestClient的asyncio socketpair会挂起，后端验证在沙箱外运行。临时18141/15174验收服务已关闭。
+
+使用：重启后端自动补表/补种，在登录页选择人物，创建演示家庭，点击“安心登录”，核对后确认保存。这里演示的是账号身份映射查询虚构社区库，不提供真实短信注册或人脸身份识别。

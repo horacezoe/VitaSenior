@@ -1,3 +1,4 @@
+import { MedicationRiskNotice } from "../components/MedicationRiskNotice";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bell, Check, Plus, Pill, ShieldCheck } from "lucide-react";
@@ -161,7 +162,7 @@ export function Profile() {
             </dl>
             <p className="source-tag">
               {data.source === "community_mock" || data.source === "demo_seed"
-                ? "演示档案"
+                ? "社区资料"
                 : "已核对档案"}{" "}
               · 最近核对{" "}
               {new Date(data.updated_at).toLocaleDateString("zh-CN", {
@@ -372,8 +373,19 @@ function PlanEditor({ original }: { original?: Schemas["MedicationPlan"] }) {
   const [file, setFile] = useState<File | null>(null),
     [uploaded, setUploaded] = useState<string | null>(null),
     [deactivating, setDeactivating] = useState(false);
+  const [risk, setRisk] = useState<{key:string; result:Schemas["MedicationRiskCheckResult"]} | null>(null);
+  const riskKey = JSON.stringify({base:api.base,elderId,value,id:original?.plan_id,version:original?.version});
+  const checkedRisk = risk?.key === riskKey ? risk.result : null;
+  const checkRisk = async () => {
+    const result = await api.post<Schemas["MedicationRiskCheckResult"]>(elderPath(elderId!, "medication-plan-risk"), {
+      plan:value, ...(original ? {replace_plan_id:original.plan_id,expected_version:original.version} : {}),
+    });
+    setRisk({key:riskKey,result});
+  };
+
   const save = () =>
     action.run(async (keys) => {
+      if (!checkedRisk) { await checkRisk(); return; }
       const bodyValue = { ...value };
       if (file) {
         const media =
@@ -441,9 +453,12 @@ function PlanEditor({ original }: { original?: Schemas["MedicationPlan"] }) {
               }}
             />
           </Field>
+          {checkedRisk && <MedicationRiskNotice result={checkedRisk} />}
+          {!checkedRisk && <p className="muted">提交前先用大模型核对新药与现有用药、已确认疾病和过敏资料。检查完成后再由您决定保存。</p>}
           <Button type="submit" className="full" loading={action.busy}>
-            {role === "child" ? "提交修改申请" : "本人核对，保存计划"}
+            {!checkedRisk ? "先检查用药风险" : role === "child" ? "已核对，提交修改申请" : "已核对，保存计划"}
           </Button>
+          {checkedRisk && <Button type="button" variant="secondary" loading={action.busy} onClick={() => void action.run(checkRisk)}>重新检查风险</Button>}
         </Card>
       </form>
       <ErrorNotice error={action.error} />
