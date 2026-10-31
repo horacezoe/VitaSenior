@@ -20,6 +20,7 @@ class ReportService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
                  memory: MemoryPort | None = None):
         self.clock, self.access, self.memory = clock, access, memory
+        self.provider_mode = "mock"
 
     def _compute(self, tx, elder_id, day):
         now = clock_now(self.clock)
@@ -86,5 +87,5 @@ class ReportService:
             age=age, conditions=profile.get("conditions", []), binding_id=binding.id if binding else None,
             relationship=binding.relationship if binding else None), date=day, completion=completion,
             today_records=records, pending_tasks=[t for t in tasks if t.completion != "completed"],
-            attention_items=attention, recommendations=[], memory_summary=memory.markdown if memory and memory.entries else "", provider_mode="mock",
+            attention_items=attention, recommendations=[], memory_summary=memory.markdown if memory and memory.entries else "", provider_mode=self.provider_mode,
             risk_assessment=RiskAssessment())

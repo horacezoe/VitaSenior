@@ -61,8 +61,12 @@ def perform(auth, *, service_name: str, operation: Callable[[ServiceBundle, Sess
         response["meta"].replaced = True
     return JSONResponse(status_code=result.status_code, content=jsonable_encoder(response))
 
+class _FamilySpeechNeeded(Exception):
+    """The shared idempotency lookup found no completed reminder to replay."""
+
+
 def family_reminder(auth, elder_id, body, key):
-    """Prepare fixed speech / controlled user recording bytes outside the write
+    """Prepare fixed/real speech or controlled user recording bytes outside the write
     lock. The one idempotent write rechecks ownership and registers the message
     for this household, so an unbound private upload can safely be shared.
     """
@@ -72,6 +76,12 @@ def family_reminder(auth, elder_id, body, key):
     if body.template_id and body.template_id not in templates:
         raise AppError(422, "VALIDATION_ERROR", "Unknown reminder template")
     text = body.text or (templates[body.template_id]["text"] if body.template_id else "请收听家人的录音。")
+    title = "家人的关怀提醒"
+
+    def persist(operation):
+        return perform(auth, service_name="notifications", elder_id=elder_id, scope="child",
+            body=body.model_dump(mode="json"), key=key, status=201, operation=operation)
+
     media = None
     with UnitOfWork(state.sessions, write=False) as unit:
         check_access(request, unit.session, auth.actor, elder_id, "child")
@@ -97,6 +107,30 @@ def family_reminder(auth, elder_id, body, key):
                 if hashlib.sha256(audio).hexdigest() != sample["sha256"]:
                     raise AppError(502, "PROVIDER_ERROR", "Demo speech integrity check failed")
                 break
+        if audio is None and state.settings.tts_provider == "real":
+            # Reuse shared idempotency, including access/body-conflict checks, so a
+            # completed request is replayed before another billable synthesis.
+            def replay_only(*_):
+                raise _FamilySpeechNeeded()
+
+            try:
+                return persist(replay_only)
+            except _FamilySpeechNeeded:
+                pass
+            tts = state.agent_tts
+            if getattr(tts, "name", None) != "real" or getattr(tts, "is_mock", True):
+                raise AppError(502, "PROVIDER_ERROR", "Family speech provider provenance is invalid")
+            try:
+                speech = tts.synthesize(text)
+            except AppError as exc:
+                if exc.status not in {501, 502, 504}:
+                    raise
+                # Preserve the entire message and show the explicit text fallback.
+                title = "家人的关怀提醒（语音暂不可用）"
+            else:
+                if (speech.is_mock or speech.text != text or not speech.content or speech.duration_ms <= 0):
+                    raise AppError(502, "PROVIDER_ERROR", "Family speech does not match the complete text")
+                audio, mime = speech.content, speech.mime_type
 
     def operation(services, tx, actor, elder):
         if body.audio_asset_id:
@@ -106,8 +140,7 @@ def family_reminder(auth, elder_id, body, key):
         asset = services.media.store_upload(tx, actor, elder_id=elder, purpose="voice_message",
             filename="reminder.wav", content_type=mime, content=audio) if audio else None
         payload = NotificationEnqueue(**body.model_dump(exclude={"audio_asset_id", "text"}),
-            elder_id=elder, kind="family_voice", title="家人的关怀提醒", text=text,
+            elder_id=elder, kind="family_voice", title=title, text=text,
             audio_asset_id=asset.asset_id if asset else None, due_at=state.clock.now())
         return services.notifications.enqueue(tx, actor, f"family:{elder}:{actor.user_id}:{key}", payload)
-    return perform(auth, service_name="notifications", elder_id=elder_id, scope="child",
-        body=body.model_dump(mode="json"), key=key, status=201, operation=operation)
+    return persist(operation)

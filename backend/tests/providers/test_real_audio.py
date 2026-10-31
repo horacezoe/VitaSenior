@@ -452,6 +452,8 @@ def test_actual_factory_runtime_ai02_and_media_bytes(configured_audio):
     app.state.agent_tts._transport = httpx.MockTransport(handler)
     runtime = client.get("/api/v1/runtime", headers=tokens["elder"])
     assert runtime.json()["data"]["providers"] == {"chat": "mock", "asr": "mock", "tts": "real"}
+    dashboard = client.get(f'/api/v1/elders/{seed["elder"]["elder_id"]}/dashboard', headers=tokens["elder"])
+    assert dashboard.json()["data"]["provider_mode"] == "mock"
     result = client.post("/api/v1/ai/tts", headers=tokens["elder"],
                          json={"elder_id": seed["elder"]["elder_id"], "text": TEXT})
     assert result.status_code == 200, result.text
@@ -472,6 +474,130 @@ def test_ai02_access_is_checked_before_paid_transport(configured_audio, account,
     result = client.post("/api/v1/ai/tts", headers=tokens[account] if account else {},
                          json={"elder_id": seed["elder"]["elder_id"], "text": TEXT})
     assert result.status_code == status and calls == []
+
+
+@pytest.fixture
+def family_audio(configured_audio):
+    app, client, seed, tokens, _ = configured_audio
+    account = {key: seed["bound_child"][key] for key in ("phone", "role")}
+    challenge = client.post("/api/v1/auth/code", json=account).json()["data"]["challenge_id"]
+    login = client.post("/api/v1/auth/login", json={**account, "challenge_id": challenge, "code": "123456"})
+    assert login.status_code == 200, login.text
+    tokens["bound_child"] = {"Authorization": "Bearer " + login.json()["data"]["access_token"]}
+    return app, client, seed["elder"]["elder_id"], tokens
+
+
+def test_new_family_text_has_real_audio_playback_and_free_idempotent_replay(family_audio):
+    app, client, elder, tokens = family_audio
+    text, calls, audio = "妈妈，周日下午三点我们来看您，这是刚写的新关怀消息。", [], pcm_wav()
+
+    def handler(request):
+        calls.append(request)
+        assert json.loads(request.content)["messages"][0]["content"] == text
+        with UnitOfWork(app.state.sessions) as unit:
+            unit.commit()  # The billable call holds no write lock.
+        return audio_response(audio)
+
+    app.state.agent_tts._transport = httpx.MockTransport(handler)
+    url = f"/api/v1/elders/{elder}/family-reminders"
+    headers = {**tokens["bound_child"], "Idempotency-Key": "new-family-text"}
+    body = {"category": "general", "text": text}
+    response = client.post(url, headers=headers, json=body)
+    assert response.status_code == 201, response.text
+    notice = response.json()["data"]
+    assert notice["text"] == text and notice["audio_asset_id"] and "暂不可用" not in notice["title"]
+    asset = client.get(f'/api/v1/media/{notice["audio_asset_id"]}', headers=tokens["elder"]).json()["data"]
+    fetched = client.get(asset["content_url"])
+    assert fetched.content == audio and fetched.headers["content-type"] == "audio/wav"
+    assert client.post(url, headers=headers, json=body).json()["data"] == notice
+    assert client.post(url, headers=headers, json={**body, "text": "换了一条文字"}).status_code == 409
+    assert len(calls) == 1
+    visible = client.post(f"/api/v1/elders/{elder}/presence", headers=tokens["elder"],
+        json={"client_id": "family-player", "visible": True})
+    assert visible.status_code == 200
+    for kind in ("displayed", "answered", "playback_completed"):
+        event = client.post(f'/api/v1/notifications/{notice["notification_id"]}/events',
+            headers={**tokens["elder"], "Idempotency-Key": kind}, json={"event_id": kind, "event_type": kind})
+        assert event.status_code == 200, event.text
+    assert event.json()["data"]["notification"]["delivery_state"] == "played"
+
+
+@pytest.mark.parametrize("mode", ["timeout", "invalid_audio", "long_text"])
+def test_family_speech_failure_sends_full_text_with_explicit_fallback(family_audio, mode):
+    app, client, elder, tokens = family_audio
+    text = "中" * 201 if mode == "long_text" else "这段关怀消息在语音失败时仍应完整保存。"
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if mode == "timeout":
+            raise httpx.ReadTimeout("substitute timeout", request=request)
+        return audio_response(b"invalid-wav")
+
+    app.state.agent_tts._transport = httpx.MockTransport(handler)
+    headers = {**tokens["bound_child"], "Idempotency-Key": "family-fallback"}
+    url, body = f"/api/v1/elders/{elder}/family-reminders", {"category": "general", "text": text}
+    result = client.post(url, headers=headers, json=body)
+    assert result.status_code == 201, result.text
+    value = result.json()["data"]
+    assert value["text"] == text and value["audio_asset_id"] is None
+    assert "语音暂不可用" in value["title"]
+    assert client.post(url, headers=headers, json=body).json()["data"] == value
+    assert len(calls) == (0 if mode == "long_text" else 1)
+
+
+@pytest.mark.parametrize("account,status", [(None, 401), ("elder", 403), ("unbound_child", 403)])
+def test_family_access_denial_does_not_call_real_tts(family_audio, account, status):
+    app, client, elder, tokens = family_audio
+    calls = []
+    app.state.agent_tts._transport = httpx.MockTransport(lambda request: calls.append(request))
+    headers = {**(tokens[account] if account else {}), "Idempotency-Key": "denied-family"}
+    result = client.post(f"/api/v1/elders/{elder}/family-reminders", headers=headers,
+        json={"category": "general", "text": "这条消息不能由无权账号发送。"})
+    assert result.status_code == status and not calls
+
+
+@pytest.mark.parametrize("source", ["template", "recording"])
+def test_real_mode_preserves_family_preset_and_uploaded_recording(family_audio, source):
+    app, client, elder, tokens = family_audio
+    calls = []
+    app.state.agent_tts._transport = httpx.MockTransport(lambda request: calls.append(request))
+    headers = {**tokens["bound_child"], "Idempotency-Key": "family-source"}
+    body = {"category": "general", "template_id": "general"}
+    if source == "recording":
+        upload = client.post("/api/v1/media", headers={**headers, "Idempotency-Key": "child-voice"},
+            data={"purpose": "voice_message"}, files={"file": ("child.wav", pcm_wav(), "audio/wav")})
+        assert upload.status_code == 201, upload.text
+        body = {"category": "general", "text": "优先播放孩子自己的录音。",
+                "audio_asset_id": upload.json()["data"]["asset_id"]}
+    result = client.post(f"/api/v1/elders/{elder}/family-reminders", headers=headers, json=body)
+    assert result.status_code == 201, result.text
+    assert result.json()["data"]["audio_asset_id"] and not calls
+
+
+def test_a_proposal_wiring_uses_real_tts_and_waits_for_full_playback(family_audio):
+    app, client, elder, tokens = family_audio
+    calls = []
+
+    def handler(request):
+        text = json.loads(request.content)["messages"][0]["content"]
+        calls.append(text)
+        assert "下周二上午九点复查" in text and "【模拟】" not in text
+        with UnitOfWork(app.state.sessions) as unit:
+            unit.commit()
+        return audio_response(pcm_wav())
+
+    app.state.agent_tts._transport = httpx.MockTransport(handler)
+    result = client.post(f"/api/v1/elders/{elder}/change-proposals",
+        headers={**tokens["bound_child"], "Idempotency-Key": "real-proposal"},
+        json={"target_type": "profile", "target_id": elder, "operation": "update", "base_version": 1,
+              "patch": {"medical_notes": "下周二上午九点复查"}})
+    assert result.status_code == 201, result.text
+    value = result.json()["data"]
+    assert value["status"] == "pending_notice" and value["auto_apply_at"] is None
+    notices = client.get(f"/api/v1/elders/{elder}/notifications", headers=tokens["elder"]).json()["data"]["items"]
+    notice = next(n for n in notices if n["proposal_id"] == value["proposal_id"])
+    assert notice["text"] == calls[0] and notice["audio_asset_id"]
 
 
 @pytest.mark.parametrize("mode", ["success", "timeout", "long_text"])
@@ -690,6 +816,8 @@ def test_real_factory_wav_asr_camera_confirmation_and_final_speech(tmp_path):
         report = client.get(f"/api/v1/elders/{elder}/reports/daily?date={day}", headers=tokens["bound_child"])
         assert report.status_code == 200, report.text
         assert report.json()["data"]["records"]["diet"][0]["checkin_id"] == record_id
+        dashboard = client.get(f"/api/v1/elders/{elder}/dashboard?date={day}", headers=tokens["bound_child"])
+        assert dashboard.status_code == 200 and dashboard.json()["data"]["provider_mode"] == "real"
 
         # Execution may change reply.text. Supplement only the final text through AI02.
         final = post("/ai/tts", "final-speech", json={"elder_id": elder, "text": value["reply"]["text"]})
