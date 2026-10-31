@@ -6,6 +6,7 @@
 
 - 共同起点：`363f6376a63d696ba36b1bc7fc426e8b159dc196`；B 分支 `backend/f2-audio`，独立 worktree `E:/CUHKSZ/project/vitasenior/.audio-work`。
 - 已正常合入 A `origin/f2/platform@24debddce9f5f2a88ee68f56f6245f7bba5b4c95`，合并提交 `41906d226adef26cbbac58ac6931dd5b1e86d1d8`，零冲突，包含 A 的 `9f46203` 握手和 C 的 `96177dc`。
+- 真实 TTS/实听之后，又正常合入 C `backend/f2-understanding@bb37744`，合并提交 `fe9b2d7a66efb3535a5c5aa2ad3cfa4d2be18f17`，零冲突；包含 C 的 Flash 非思考模式补丁及其回归，B 未自行编辑 C 文件。同步时 A 的远端仍为 24debdd，旧公共断言尚未更新。
 - C 最新交接报告：正常工厂/Uvicorn 的真实文字、餐食照片、确认落库、看板/日报、重启及显式 mock 回退均通过；A 已合入复验。此处是 A/C 的证据，不冒充 B 已重复发起供应商请求。
 - B 自己的改动仅 `providers/real_audio.py`、用户后续明确新增的 `providers/real_tts.py`、`tests/providers/test_real_audio.py`、按 A 要求提供的独立 `tests/providers/probe_real_tts.py` 和本文件。公共/其他领域文件只来自正常 merge，没有由 B 编辑。
 - 测试用临时 SQLite；B 本机演示数据 `backend/data/f2-audio-b`、默认数据库 `vitasenior.sqlite3`，端口 8022。没有操作他人的运行库、重置历史或移动标签。
@@ -50,7 +51,7 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 # 可选：--text '这是一条新的中文完整播报测试。'
 ```
 
-也可在进程设置 `LIVE_TTS=1`；无显式启用会退出 2。缺 key/base/model 同样退出 2。成功后 `data/f2-audio-b/evidence/<独立时间戳>/speech.wav` 和 `evidence.json` 保留文本、时间、模型/音色、MIME、时长/字节数、SHA-256、耗时、Runtime 与 `listened=false`，不保存 token/票据/key。真实探针用 TestClient 驱动正常应用，尚不代替真实 TCP/前端设备播放。
+也可在进程设置 `LIVE_TTS=1`；无显式启用会退出 2。缺 key/base/model 同样退出 2。成功后 `data/f2-audio-b/evidence/<独立时间戳>/speech.wav` 和 `evidence.json` 保留文本、时间、模型/音色、MIME、时长/字节数、SHA-256、耗时、Runtime，生成时标记 `listened=false`，有实听确认后再更新；不保存 token/票据/key。真实探针用 TestClient 驱动正常应用，尚不代替真实 TCP/前端设备播放。
 
 应用不自动加载 .env。A 的 run-demo.ps1 默认依赖 backend/.venv，本机实际复用 ../../.review-venv；长期服务应按本机解释器路径显式导入 env 后用单 worker/8022 启动，不改共享脚本来适配 B 工作区。
 
@@ -63,6 +64,7 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 | `python -m pytest tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/f2-b-shared-handshake` | 118 passed / 1 warning / 8.56s（独立探针的两项回归加入前） |
 | `python -X utf8 -m pytest tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/f2-mimo-null-transcript` | **121 passed / 1 warning / 9.06s**，含真实响应 null transcript 兼容回归 |
 | `python -m pytest tests -q --tb=short --basetemp=.pytest_cache/f2-b-integrated-all` | **485 passed / 1 failed / 42 deselected / 1 warning / 146.30s**；唯一失败为下述 A 旧阶段断言，包含 B 的 120 项通过 |
+| `python -X utf8 -m pytest tests -q --tb=short --basetemp=.pytest_cache/f2-b-live-final` | **488 passed / 1 failed / 42 deselected / 1 warning / 126.88s**；含 B 121 项通过，唯一失败仍是 A 的旧“模块不存在”断言 |
 | `python -m app.tools.export_contract --check` | OpenAPI matches `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
 | `python -m app.tools.check_architecture` | Architecture OK |
 | `python -m pip check` | No broken requirements found |
@@ -86,5 +88,16 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
 3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；下一步仅做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。
 4. A 合入 B 后更新公共测试、TTS env 示例和 FAST-05；C 的真实饮食主链继续用现成实现，不重复开发。ASR 只有 TTS 稳定且时间允许才考虑；当前延期，不接转码/新依赖。
+
+A 的公共测试可将“模块缺失”段替换为真实构造检查（只构造，不调用供应商）：
+
+```python
+real_tts = build_agent_providers(Settings(
+    data_dir=tmp_path, tts_provider="real", tts_api_key="test-key",
+    tts_base_url="https://api.xiaomimimo.com/v1", tts_model="mimo-v2.5-tts",
+))[2]
+assert real_tts.name == "real" and real_tts.is_mock is False
+# 保留缺 key/base/model 拒启断言；非法 endpoint 应为 ValueError。
+```
 
 官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[鉴权与结束原因](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)。真实 TTS/媒体字节与本机文件人工实听已验；手机 HTTPS/自动播放、真实 TCP 音频联调与 ASR 尚未验收。
