@@ -10,6 +10,7 @@ Only two model requests (one text, one image). Never prints keys/tokens/media UR
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -29,9 +30,25 @@ from app.seed import framework_seed
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, required=True, help='A non-private demo meal photograph')
+    parser.add_argument('--env-file', type=Path, help='Explicitly read local CHAT_* settings; application does not auto-load this file')
+    parser.add_argument('--live', action='store_true', help='Explicitly enable exactly two real model requests')
     args = parser.parse_args()
-    if os.getenv('LIVE_UNDERSTANDING') != '1':
-        parser.error('Real requests are disabled; explicitly set LIVE_UNDERSTANDING=1')
+    if args.env_file:
+        allowed = {'CHAT_API_KEY', 'CHAT_BASE_URL', 'CHAT_MODEL', 'LIVE_UNDERSTANDING'}
+        for number, line in enumerate(args.env_file.read_text(encoding='utf-8-sig').splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            key, separator, value = line.partition('=')
+            key, value = key.strip(), value.strip()
+            if not separator or not re.fullmatch(r'[A-Z][A-Z0-9_]*', key):
+                parser.error(f'Invalid env-file syntax at line {number}')
+            if key in allowed:
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                    value = value[1:-1]
+                os.environ[key] = value
+    if not args.live and os.getenv('LIVE_UNDERSTANDING') != '1':
+        parser.error('Real requests are disabled; explicitly use --live or LIVE_UNDERSTANDING=1')
     missing = [name for name in ['CHAT_API_KEY', 'CHAT_BASE_URL', 'CHAT_MODEL'] if not os.getenv(name)]
     if missing:
         parser.error('Missing configuration: ' + ', '.join(missing))

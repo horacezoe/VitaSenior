@@ -2,7 +2,7 @@
 
 2026-10-31（Asia/Hong_Kong）。从指定 `363f6376a63d696ba36b1bc7fc426e8b159dc196` 开始，分支 `backend/f2-understanding`。独立 worktree：`C:/Users/horac/Documents/ChatGPT/hackthon Su2026/VitaSenior-f2-understanding`；F1 的 D 盘工作区/数据未改。开工13:56，主链目标16:56，功能截止17:56。
 
-状态：**C_ADAPTER_IMPLEMENTED / LIVE_NOT_RUN / A_CHAT_WIRING_REQUIRED**。用户确认目前还没有模型账号配置，正在向同事获取；实际供应商文字/图片请求均未运行，FAST-02未通过，不发布F2完成标签。
+状态：**C_OFFLINE_VERIFIED / LIVE_NOT_RUN / A_CHAT_WIRING_REQUIRED**。供应商已确定为MiMo，用户已拿到key；已准备本机 `backend/.env` 供填写。该文件被Git忽略、绝不上传；公共 `backend/.env.mimo.example` 的CHAT_API_KEY保持为空，同事自行复制填写。实际供应商文字/图片请求尚未运行，FAST-02未通过，不发布F2完成标签。
 
 ## 已交付与入口
 
@@ -27,17 +27,17 @@ chat = RealUnderstanding(
 
 ## A共享提交的准确缺口
 
-已读取 `f2/platform@9c41389`：当前Settings仍拒绝CHAT_PROVIDER=real，build_agent_providers只允许TTS切真实，Runtime按settings返回chat=mock。请A放行并构造上述真实chat实例、按实际实例生成Runtime；同步公共测试中“chat=real必须拒绝”的旧断言。C不会修改公共文件来绕过此门槛。
+已正常merge `f2/platform@9c41389`，合并提交 `20cddd3`；C实现提交 `fa245e2`。当前Settings仍拒绝CHAT_PROVIDER=real，build_agent_providers只允许TTS切真实，Runtime按settings返回chat=mock。请A放行并构造上述真实chat实例、按实际实例生成Runtime；同步公共测试中“chat=real必须拒绝”的旧断言。C不会修改公共文件来绕过此门槛。
 
 用户本版FAST-02是**真实文字+真实餐食照片确认落库**，真实TTS是优先争取。A当前交接把TTS列为必交、把mock主链列成真实理解通过，与用户最新版不同，请按用户本版验收，不用mock/替身结果替代供应商通过。
 
 ## 验证与真实探测
 
-已运行（Python3.13.9，D盘既有venv，临时SQLite/FakeClock）：C全量154 passed；随后新增截止保护，F2专项60 passed。最终合入A后的完整输出待本文件收尾更新。测试替身之外，A/B/C业务端口和登录/绑定/媒体/记录/看板是真实实现，测试没有偷偷装到生产工厂。
+已运行（Python3.13.9，D盘既有venv，临时SQLite/FakeClock）：C全量157 passed（24.91s）；全量361 passed / 42 deselected（77.42s），无失败/xfail；严格三轮39 OK / 0 PENDING / 0 FAIL；真实默认Uvicorn网络烟测C_NETWORK_SMOKE_OK。契约/架构/依赖检查通过，OpenAPI SHA-256仍为 `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。测试替身之外，A/B/C业务端口和登录/绑定/媒体/记录/看板是真实实现，测试没有偷偷装到生产工厂。唯一warning为既有Starlette/httpx弃用提示。
 
 ```text
-python -m pytest tests/agent -q --tb=short --basetemp=.pytest_cache/c-f2-agent
-python -m pytest tests -q --tb=short -rx --basetemp=.pytest_cache/c-f2-all
+python -m pytest tests/agent -q --tb=short --maxfail=1 --basetemp=.pytest_cache/c-f2-agent-final
+python -m pytest tests -q --tb=short -rx --maxfail=1 --basetemp=.pytest_cache/c-f2-all-final
 python -m app.tools.integration_smoke --strict
 python tests/agent/smoke_network.py
 python -m app.tools.export_contract --check
@@ -50,12 +50,13 @@ python -m pip check
 拿到账号后显式启用，仅用非隐私演示照片，最多文字/图片各一次实际模型请求：
 
 ```powershell
-# 使用本机环境配置 LIVE_UNDERSTANDING=1、CHAT_API_KEY、CHAT_BASE_URL、CHAT_MODEL
-python tests/agent/probe_real_diet.py --image <演示餐食照片路径>
+# 将 .env.mimo.example 复制为被Git忽略的 .env，并在本机填写 CHAT_API_KEY
+# 仅这个探测命令显式读取文件；正常应用仍不会自动加载.env
+python tests/agent/probe_real_diet.py --env-file .env --live --image <演示餐食照片路径>
 ```
 
-该命令使用临时数据库、真实A/B/C端口和**明确注入的真实适配器**，验证pending阶段不落记录、确认一次、重试不重写、source与子女看板/日报同一记录。它不代替A默认工厂/网络启动验收。无显式开启不会请求供应商，不打印密钥/token/票据；当前仅验证了--help，真实调用未运行。
+该命令使用临时数据库、真实A/B/C端口和**明确注入的真实适配器**，验证pending阶段不落记录、确认一次、重试不重写、source与子女看板/日报同一记录。它不代替A默认工厂/网络启动验收。无 --live/LIVE_UNDERSTANDING=1 不会请求供应商，不打印密钥/token/票据；已验证--help及不带--live时明确拒绝（退出2），真实调用未运行。探测只读取CHAT_*与LIVE_UNDERSTANDING，忽略.env中的数据库地址，防止误用运行数据库。
 
-协议准备参考官方[图片输入](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)和[JSON输出](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/text-generation/structured-output)；不据文档推定本机账号/模型已开通。供应商/model/baseURL由现有账号决定，目前未获提供。
+协议参考官方[图片输入](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)和[JSON输出](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/text-generation/structured-output)。MiMo地址为 `https://api.xiaomimimo.com/v1`，示例模型 `mimo-v2.6-flash` 仍须用实际账号验证权限，不能把文档支持当作真实调用通过。
 
 仍未验收：真实文字/照片、A默认real chat装配、真实音频/手机实听/HTTPS。图片需明确“今天午餐”等餐次文字；模型不凭菜品推测餐别。运动/药物等原业务API保持可用，真实自然语言覆盖延期，不扩展新意图/记忆机制。
