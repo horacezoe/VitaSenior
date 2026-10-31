@@ -105,7 +105,8 @@ class AgentService:
                         tuple(tx.scalars(pending).all()))
 
     def record_turn(self, tx: Session, actor: Actor, request: AgentTurnWrite,
-                    snapshot: Snapshot, plan: Plan, *, speech: Speech | None = None) -> AgentTurn:
+                    snapshot: Snapshot, plan: Plan, *, speech: Speech | None = None,
+                    tts_provider: str | None = None) -> AgentTurn:
         """In a fresh write UoW; failure must roll back turn/actions/tool/memory."""
         old = self.replay(tx, actor, request)
         if old is not None:
@@ -131,13 +132,14 @@ class AgentService:
         tx.flush()
         public_actions = []
         reply = plan.reply
+        prefix = "【模拟】" if plan.chat_provider == "mock" else ""
         if plan.decision_action_id:
             if plan.decision_action_id not in snapshot.pending_action_ids:
                 raise AppError(404, "NOT_FOUND", "Action was not part of this snapshot")
             result = self.decide(tx, actor, plan.decision_action_id, ActionDecision(decision="confirm"))
             old_action = tx.get(ActionRow, plan.decision_action_id)
             public_actions.append(TypeAdapter(Action).validate_python({**old_action.payload_json['public'], "status": result.status}))
-            reply = "【模拟】" + result.reply.text
+            reply = prefix + result.reply.text
         for prepared in plan.actions:
             public = prepared.action
             payload = dict(prepared.payload)
@@ -156,9 +158,9 @@ class AgentService:
                 action.status = "confirmed"
                 action.result_json = direct.model_dump(mode="json", exclude_unset=True)
                 if isinstance(direct.result, BindingCode):
-                    reply = f"【模拟】您的绑定码是{direct.result.code}，请仅分享给要绑定的家人。"
+                    reply = f"{prefix}您的绑定码是{direct.result.code}，请仅分享给要绑定的家人。"
                 elif isinstance(direct.result, DailyReport):
-                    reply = "【模拟】" + direct.result.summary_text
+                    reply = prefix + direct.result.summary_text
             public_actions.append(public)
         if plan.preference:
             # Preference only comes from a validated provider plan for an explicit
@@ -183,7 +185,8 @@ class AgentService:
             reply=Reply(text=reply, audio_asset_id=audio_asset_id), scene=plan.scene,
             avatar_state="speaking" if audio_asset_id else "idle", actions=public_actions,
             memory=MemoryChange(version=memory.version, changed=memory.version != snapshot.memory.version),
-            providers=Providers(chat="mock", asr=plan.asr_provider, tts="mock" if audio_asset_id else "not_used"),
+            providers=Providers(chat=plan.chat_provider, asr=plan.asr_provider,
+                                tts=(tts_provider or ("mock" if speech.is_mock else "real")) if audio_asset_id else "not_used"),
             degraded=[] if audio_asset_id else ["tts_unavailable"],
         )
         row.response_json = response.model_dump(mode="json", exclude_unset=True)
