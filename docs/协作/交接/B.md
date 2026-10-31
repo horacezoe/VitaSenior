@@ -1,117 +1,122 @@
 # B 健康域交接
 
-日期：2026-10-31。当前分支 `backend/health`；A先前指出的七个health接口均已启用，health共16项能力为true。B剩余路由与新模型适配已完成；**NOTI03仍为false，完整P0尚未验收**，原因是A的提案音频只播放提示音，不能当作实际修改内容的完整播报。另有一项A设置提案未来目标不同步的明确strict xfail，不能计为通过。
+日期：2026-10-31。分支 `backend/health`。本文件当前状态覆盖历史交接中的“B桩/7个pending/提示音/source未接线”结论。
 
-## 1. 基线与提交
+**B的17项health能力已全部开启，包含NOTI03。** 可信Agent确认来源已落库；默认部署严格三轮为 **39 OK / 0 PENDING / 0 FAIL**，真实Uvicorn网络烟测通过。全量暂为 **295 passed / 3 failed / 42 deselected**：3项均是C旧测试预期（2个修复后strict XPASS、1个仍要求NOTI03=false），未改C文件掩盖失败。尚不能宣称全量测试或完整产品P0已经全部通过。
 
-- 独立checkout：`E:/CUHKSZ/project/vitasenior/.health-work`；远端：[backend/health](https://github.com/horacezoe/VitaSenior/tree/backend/health)。根目录原文件、`.framework-review` 和他人的运行库未改。
-- 起点：`f1-reviewed-v1` → `1034c7698de4394b3e7695a3a820df2dcfeaf28b`，其父提交为已复验 `497fc4ce6ede5ee951c57cd06913197391633f56`。
-- A0：`f1-shared-v1` → `10d51af92715354a2ecd1d5469810272a406c621`，正常merge `aae25c4`。
-- A1/A2：正常merge `72d7610` 为 `998ec83`。
-- 最新共享集成：正常快进 `integration/f1@51dc555`，包含A的真实组装、B ports、Task/History绑定、新模型以及C2启用。
-- 最新C：正常merge `backend/agent@1e31bb6` 为 `25925ad`，包含C用药任务ID持久化及版本复核修正。
-- 最后fetch又合入A文档更新 `integration/f1@6774083`（仅接口补充与A交接，业务代码与最终266项验证一致）。其7.1将提示音等同完整播报的描述仍需按原业务约束修正，B不据此开启NOTI03。
+## 1. 基线与本轮提交
 
-| B批次 | 提交 |
+- 独立checkout：`E:/CUHKSZ/project/vitasenior/.health-work`；远端：[backend/health](https://github.com/horacezoe/VitaSenior/tree/backend/health)。根目录原文件及他人运行数据库未改。
+- 共同起点 `f1-reviewed-v1` → `1034c7698de4394b3e7695a3a820df2dcfeaf28b`，父提交为已复验代码 `497fc4ce6ede5ee951c57cd06913197391633f56`；正常合入 `f1-shared-v1`（`10d51af`），没有从main重建框架。
+- 既有B：`9299f2c` B1服务；`6ef7e66` B2回执/扫描；`b1535f8`演示历史；`9cfe39b`真实A窗口/重启；`b8b064a`剩余HTTP、模型适配和16项能力；`be0ae4c`稍后提醒恢复；`ce472da`上轮交接。
+- 本轮先快进A `0894154`，关闭设置提案/系统主体/脚本时刻等旧缺口。
+- `c1fe1d6`：实现冻结的CheckinPort来源参数及持久化/修订测试。
+- `76cd70b`：正常merge A `integration/f1@666b317`，其中已含C `backend/agent@974d719`/`73e8f20`的完整播报与可信来源调用。
+- `e78e604`：通过实际完整内容HTTP验证后开启NOTI03，移除B测试的临时能力覆盖，默认应用直接验证全部17项。
+
+本轮B实际编辑：`services/health_service.py`、`services/health_capabilities.py`、`tests/health/test_checkin_provenance.py`、`test_notice_http.py`、`test_activation.py`、`test_change_integration.py`及本角色两份文档。公共/C文件变化仅来自正常merge；不reset、不强推、不移动标签。
+
+## 2. 可调用接口和来源约定
+
+| 能力 | 行为 |
 | --- | --- |
-| 初批B1计划/任务/打卡/汇总服务 | `9299f2c` |
-| B2回执/扫描/已有port HTTP协调 | `6ef7e66` |
-| 演示历史与未来目标边界 | `b1535f8` |
-| 真实A窗口/拒绝/重启、Clock注入检查 | `9cfe39b` |
-| 首次交接 | `8fc6289` |
-| 剩余路由、新模型、亲情语音、16项激活 | `b8b064a` |
-| 合入最新C | `25925ad` |
-| 稍后提醒恢复、typed flow协调 | `be0ae4c924fc73801e2c365764cf9447ccd36d54` |
+| PLAN01–03、SET01–02 | 计划/设置读写，合并后校验、版本冲突、未来目标同步；子女走A提案 |
+| TASK01 | 当日目标快照；A已将TaskPort绑定到真实CheckinService.today |
+| REC01–04 | 同餐替换、运动多次、具体药物任务唯一、纠正/软取消与C来源失效 |
+| REPORT01、DASH01、CAL01 | 同一计算入口，明确taken/明确not_taken/未记录分开，历史分母不重建 |
+| NOTI01–02 | 可见心跳25秒有效；通知列表无送达副作用、分页/权限隔离 |
+| NOTI03 | displayed→answered→完整播放，事件幂等；同tx调A窗口，播放不产生taken |
+| NOTI04 | 家人录音优先；固定完整中文关怀语音，未匹配文字明确降级 |
 
-全部正常merge/快进，不reset、不移动发布标签。B未直接编辑公共文件。
-
-## 2. 当前可调用接口
-
-已启用并有默认组装真实HTTP验证：
-
-| 编号 | 行为 |
-| --- | --- |
-| PLAN01–03 | 计划列表/创建/合并校验后更新；乐观版本；子女直接写拒绝 |
-| SET01–02 | 设置读取/本人更新，与Profile共用版本；未来目标及记忆来源同tx更新 |
-| TASK01 | 日期目标快照；复用CheckinService.today；批次区分已生成零目标与从未生成 |
-| REC01–04 | 类型分页、同餐替换、运动多条、具体药物任务唯一、纠正与软取消 |
-| REPORT01 / DASH01 / CAL01 | 共用计算入口；明确taken、明确not_taken、未记录区分；记忆上下文来自真实C |
-| NOTI01–02 | 25秒可见心跳/多页有效性；列表无送达副作用、分页与权限隔离 |
-| NOTI04 | 本人录音优先、亲情预设文字与匹配的真实中文演示语音、明确文字降级 |
-
-NOTI03的服务与flow已实现，测试验证顺序/幂等/可见性/多次播放/同事务调用A窗口/播放不等于taken。公开能力暂未开启，因为该入口同时覆盖修改提案；A当前的0.8秒双音不能作为本次修改已播报的证据。NOTI03普通提醒在隔离验收时显式开启测试，不冒充正常部署已经启用。老人明确接受/拒绝提案仍可使用A CHANGE04，不需要虚构播放。
-
-实际内部port：
+冻结的内部写入口：
 
 ```python
-services.medication.import_draft(tx, actor, elder_id, confirmed_plans)
-services.medication.apply_change(tx, actor, elder_id, operation, target_id, patch, expected_version)
-services.medication.get_plan(tx, actor, plan_id)
-services.medication.list(tx, actor, elder_id, active)
-services.medication.settings(tx, actor, elder_id)
-services.medication.update_settings(tx, actor, elder_id, expected_version, patch)
-services.tasks.today(tx, actor, elder_id, hk_day)
-services.history.import_demo_history(tx, actor, elder_id, demo_id=demo_id, days=14)
-services.checkins.create_or_update(tx, actor, elder_id, payload, checkin_id)
-services.checkins.list(tx, actor, elder_id, hk_day, category, limit, cursor)
-services.checkins.cancel(tx, actor, elder_id, checkin_id, expected_version)
-services.reports.daily(tx, actor, elder_id, hk_day)
-services.reports.dashboard(tx, actor, elder_id, hk_day)
-services.reports.calendar(tx, actor, elder_id, month)
-services.notifications.enqueue(tx, actor, source_key, payload)
-services.notifications.handle_event(tx, actor, notification_id, event, clock.now())
-services.notifications.scan(tx, clock.now())  # 系统入口，不伪造Actor
+def create_or_update(self, tx, actor, elder_id, payload, checkin_id=None, *,
+                     source: Literal["user", "agent_confirmed"] = "user") -> Checkin: ...
 ```
 
-所有入口使用调用方同一tx；服务不commit/rollback/另开连接。flow在写事务内重新验证真实会话/访问权，成功业务与幂等结果一次提交。TASK/report物化使用BEGIN IMMEDIATE串行化，C也已修复先持久化用药任务ID再退出事务调用provider。
+C调用样例（仅在本人明确确认后，使用调用方的同一tx）：
 
-## 3. 重要行为与数据约定
+```python
+record = services.checkins.create_or_update(
+    tx, actor, elder_id, validated_checkin, source="agent_confirmed",
+)
+assert record.source == "agent_confirmed"
+# 调用方把Action结果、业务、幂等一起commit；B不自行提交。
+```
 
-- DailyTask.cancelled_at软停用，只处理尚未发生、无记录、未送达的未来任务；历史与已确认快照保留。删时段/停用计划不删FK引用行，重加未来slot复用原行。
-- DailyGoalBatch按elder/date/category持久化；当前/未来正常物化，历史未生成日期不从新计划回填。显式计划/设置变更可更新未来目标，过去分母不被重写。
-- 新计划/改期不补造已过去的固定义务；餐后无餐时waiting_for_meal，纠正/取消餐食后按保存的计划快照重算时间。已送达通知不回退、不重复来电。
-- 记录修订JSON重新赋值；纠正/取消调用C来源失效，与业务和幂等同tx。真实C记忆观察失效与看板同步已有HTTP回归。
-- 旧存储中不合法的计划（例如空slots）返回422，不放宽schema；合法schedule patch可修复，失败不增加版本。
-- 演示历史只在确认的同一demo家庭显式导入，source=demo_seed，稳定source_key去重；不覆盖用户记录、不生成历史来电、不猜多药物计划的fixture映射。
-- 亲情录音经MediaPort.assert_owned_voice核对上传者；受控字节在事务外读取，再通过A的媒体port登记到目标家庭，老人可正常取回。录音优先于模板。
-- fixtures/health四个WAV由离线Windows SAPI生成，含明确“模拟”，显示文本与实际语音匹配且有SHA-256；服务器不依赖SAPI。任意未匹配文字保留原文、audio_asset_id=null，不返回无关语音。
-- 完整播放每次使用独立event_id，达到repeat_count才置played；相同ID不累计。播放/handled都不创建服药记录。snoozed截止持久化，扫描到期只恢复open，不重设送达/播放。
-- 系统扫描只生成当天待办，不调用TTS/推送、不创建用户Actor。A在同一tick内协调它和ChangePort.apply_due；未启动第二套扫描循环。
+普通HTTP不接受source字段，客户端自报仍422；默认服务调用记user。每次有效修订保存本次操作者来源，旧来源先留在revisions_json；取消不改写来源。demo_seed只走原内部演示历史导入，不开放为该参数值。
 
-## 4. 实际验证
+A调用样例沿冻结入口，不直接写B表：
 
-Windows / Python 3.11.5 / 既有 `.review-venv` 与锁定依赖，无新依赖。pytest全部tmp_path SQLite，基目录为本checkout的`.pytest_cache`；网络冒烟另用独立临时DATA_DIR和127.0.0.1随机端口，进程已退出。未启动持久服务、未清空运行库；正式B端口预留8002。
+```python
+services.medication.update_settings(tx, actor, elder_id, expected_version, patch)
+services.medication.import_draft(tx, actor, elder_id, confirmed_plans)
+services.history.import_demo_history(tx, actor, elder_id, demo_id=demo_id, days=14)
+services.tasks.today(tx, actor, elder_id, hk_day)
+services.reports.daily(tx, actor, elder_id, hk_day)
+services.notifications.handle_event(tx, actor, notification_id, event, clock.now())
+```
 
-在backend目录使用 `../../.review-venv/Scripts/python.exe`：
+现有list/cancel/calendar/dashboard/presence/query/scan等port签名见共享`contracts/ports.py`，没有第二套DTO或协议。所有跨域写使用同一tx；服务不commit/rollback/另开连接，来源失效也在其中。C先持久化所需task_id并退出短事务，再调慢provider；确认时重验计划/任务。
+
+## 3. NOTI03与语音口径结论
+
+已读取交接目录A/B/C，当前应以A的11.7和本次提交为准，旧11.6类别录音及C旧NOT_READY不是当前事实。A已删除按类型播放的五段通用录音，改接C的`proposal_text/prepare_proposal_notice/ProposalFixtureTTS`。
+
+当前完整样例包含具体修改字段/值、申请语气、完整播放后60秒可拒绝、可明确接受/拒绝；用药样例包含药名、用量、时间/停用对象，显式清空也有描述。生成清单、实际媒体字节与默认HTTP已核对，**满足本轮mock演示的内容口径**。建议下次调整文案时补一句“60秒内未拒绝将生效”，提升老人理解；这是文案优化，不为它另建协议或重新阻塞本轮能力。
+
+范围必须如实说明：
+
+- 只有五个精确匹配的预录完整样例；不是任意文本TTS。SAPI只离线制作素材，运行时不依赖Windows语音。
+- 不同备注/原因/药品/ID没有对应语音时，保存完整文字、audio=null、pending_notice；本人仍可明确接受/拒绝。用药修改/停用样例含example-plan，真实随机plan_id通常走此文字降级，不声称五种任意真实请求都有语音。
+- 未进入/未接听/未完成播放不计时；查询和推送不算送达。B只消费真实播放器完整回执，C不能生成播放证据；没有加ASR核验音频、声音签名或另一份窗口状态机。
+- 音频准备在写事务外；通知事件与A mark_played窗口同tx。超时使用A冻结SYSTEM_ACTOR；播放和handled均不产生服药事实。
+- 手机实际播放/HTTPS尚未验收，不能把字节验证等同设备实听。
+
+## 4. 仍保留的业务边界
+
+- DailyGoalBatch区分已生成零目标与从未生成；历史日期不按新计划回填。DailyTask.cancelled_at只停用尚未发生、未记录/未送达的未来任务，不删除外键行。
+- 同餐按elder/date/meal_slot替换；运动可多条；用药逐一核对elder/type/plan/task/slot。未打卡不是明确漏服。
+- 餐后无进餐则waiting_for_meal；纠正/取消餐食按任务快照重算，已送达不重复来电。snoozed到期只恢复open，不回退delivery。
+- 纠正/取消同tx调用C on_source_changed；日报/日历/看板重开Session后仍一致。
+- 家人录音通过A媒体归属校验，事务外取受控字节，再登记为目标老人可访问的媒体；录音优先。B四段关怀预设和C五段完整提案素材用途不同，勿复制成第三套提案语音。
+- 扫描器沿用统一factory/Clock/单循环；只生成当天提醒，不向演示历史补发来电。无外部TTS/推送写锁。
+
+## 5. 本轮实际验证
+
+Windows / Python 3.11.5 / 既有`.review-venv`和锁定依赖，无新依赖。pytest使用tmp_path，基目录在本checkout`.pytest_cache`；网络烟测临时DATA_DIR、随机本机端口，结束已退出。未清空运行数据库；正式B端口预留8002。
+
+在backend目录使用`../../.review-venv/Scripts/python.exe`：
 
 | 命令 | 实际结果 |
 | --- | --- |
-| python -m pytest tests/health -q --tb=short -rx --basetemp=.pytest_cache/b-verified-routing | 85 passed / 1 xfailed（稍后恢复新增前） |
-| python -m pytest tests -q --tb=short -rx --basetemp=.pytest_cache/b-final-integrated | 265 passed / 42 deselected / 1 xfailed（含最新C，稍后恢复新增前） |
-| python -m pytest tests -q --tb=short -rx --basetemp=.pytest_cache/b-delivery-active | **266 passed / 42 deselected / 1 xfailed**（最终代码） |
-| python -m pytest tests/health/test_b2.py tests/health/test_activation.py tests/health/test_shared_settings_gap.py -q --tb=short -rx --basetemp=.pytest_cache/b-final-scanner | 40 passed / 1 xfailed |
-| python tests/agent/smoke_network.py | C_NETWORK_SMOKE_OK，真实默认Uvicorn/鉴权/建档/绑定/Agent确认与重放/日报与记忆/音频字节/提案明确接受 |
-| python -m app.tools.export_contract --check | matches，`4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
+| python -m pytest tests/health/test_checkin_provenance.py -q --tb=short --basetemp=.pytest_cache/b-source-contract | 2 passed |
+| python -m pytest tests/health/test_notice_http.py -q --tb=short --basetemp=.pytest_cache/b-full-notice-http | 4 passed（先验收再激活） |
+| python -m pytest tests/health -q --tb=short --basetemp=.pytest_cache/b-noti03-enabled | **93 passed**，默认声明，无临时覆盖 |
+| python -m pytest tests -q --tb=short -rx --basetemp=.pytest_cache/b-final-source-notice | **295 passed / 3 failed / 42 deselected**，129.90s |
+| python -m app.tools.integration_smoke --strict | **39 OK / 0 PENDING / 0 FAIL，exit 0**，默认能力无临时开启 |
+| python tests/agent/smoke_network.py | C_NETWORK_SMOKE_OK，默认真实Uvicorn、A/B/C写入/重放/日报/记忆/媒体/明确接受 |
+| python -m app.tools.export_contract --check | matches，4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c |
 | python -m app.tools.check_architecture | Architecture OK |
-| python -m pip check | No broken requirements found |
-| git diff --check | 无错误 |
+| git diff --check | 通过 |
 
-最终全量复验已结束，无非预期失败；1项strict xfail仍是明确未解决的A共享问题。唯一既有warning为Starlette/TestClient的httpx弃用提示，未屏蔽。
+唯一warning为既有Starlette/httpx弃用提示，未屏蔽。42 deselected是A0原有F0阶段分类；未删公共测试、未放宽schema、未用排除C失败来宣称全量绿。
 
-**strict xfail不是通过**：`test_approved_settings_proposal_updates_existing_future_goals` 使用真实默认HTTP，A接受关闭运动的设置提案后settings=false，但已生成的明日运动expected仍为1。A直接改JSON绕过B入口，待A修复后strict XPASS会要求移除标记。其余设置本人更新、未来任务停用与来源失效已通过。
+## 6. 给A/C的最后接手项
 
-`python -m app.tools.integration_smoke --strict`：**34 OK / 4 PENDING / 0 FAIL，退出1**。3项是NOTI03保留501；另1项为脚本中午创建当天08:00计划，B不生成过去任务。药物新计划13:00→匹配task→明确taken→重放仅一条→日报completed=1已有默认HTTP验收。不能把该脚本PENDING当作成功，也不能为消除它补造过去目标。
+C需正常合入`origin/backend/health`，只更新过时验收预期，保留原业务断言：
 
-未运行手机HTTPS/真实设备播放、真实供应商、完整AC01–AC14或零PENDING三轮验收。P0尚未完成，因此P1系统推送未尝试，push_state保持unsupported。
+1. `tests/agent/test_http.py::test_actual_b_confirmation_writes_once_and_report_uses_same_record` 删除source缺口的strict xfail；当前实际断言全部成功，报XPASS。
+2. 同文件`test_medication_new_day_task_ids_remain_valid_after_planning[none]`移除该参数的source缺口strict xfail；其余版本冲突参数不改。
+3. `tests/agent/test_production_acceptance.py::test_default_wiring_runtime_and_all_seven_c_routes`把NOTI03=false过时预期改为true。
 
-## 5. 需 A/C 继续
+B未编辑C白名单外测试。A合入后重跑全量、严格三轮、网络烟测，刷新A/C交接的当前状态与接口说明7.1“提示音频”旧描述。无新的B业务port依赖未实现；当前剩余是上述C测试同步与尚未执行的设备/总体验收。
 
-详见 [变更申请/B.md](../变更申请/B.md)，当前只剩共享事项：
+## 7. MVP初衷与三方边界复核
 
-1. A/C提供与本次提案内容一致的真实播报，明确拒绝提示音作为完成证据；B随后验收并开启NOTI03。
-2. A的settings提案在同tx调用已冻结B update_settings，修复未来目标不同步，避免重复版本递增。
-3. A统一真正的系统授权入口，替换超时处理中构造老人Actor的做法。
-4. A修正其联调脚本的计划时间、plan/task匹配与可见心跳。
-5. A/C冻结Agent确认记录的可信来源参数；当前C真实确认结果source仍为user，B不接受客户端自报来源。
+目标始终是黑客松路演的轻量家庭健康闭环：**业务记录、家庭授权、确认和提案状态真实落库；AI/ASR/TTS可明确mock。** 根据现有代码与交接，A维护平台/共享契约/提案，B维护健康记录/目标/通知，C维护理解/确认编排/记忆，分工合理。授权、一次事务、明确服药确认、来源修订、历史分母和播报后窗口都是原需求所需，不属于额外生产化。
 
-请正常合入 `origin/backend/health`，不移动标签、不覆盖他人改动。B业务代码/测试/素材/文档均在白名单，公共定义仅来自已发布A/C正常merge。
+接下来应停止横向扩建：维持一个FastAPI进程、SQLite、现有扫描器和typed ports，不引入Redis/Celery/向量库/通用工作流；不为了少量演示语音建设任意文本TTS供应链或动态协议协商。C当前为旧B适配器加的签名检查属于短期集成保护，统一版本后可在常规整理时收敛，不发展成兼容平台，也不为清理它阻塞路演。
+
+优先顺序：更新这三条验收预期→A一次整合全量验证→固定演示脚本与设备演练。未做真实供应商、手机HTTPS/播放器、完整AC01–AC14或P1推送，不列为通过。P1系统推送至多按原计划限时探测，不能反过来延迟P0；当前不自动扩展该范围。
