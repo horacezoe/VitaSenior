@@ -15,9 +15,8 @@ from datetime import datetime, timedelta
 import base64
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.contracts.context import Actor
+from app.contracts.context import Actor, SYSTEM_ACTOR
 from app.core.auth import require_elder_access
-from app.fixtures.announcement import ANNOUNCEMENT_TEXT
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -37,7 +36,6 @@ TITLES = {
     ("medication_plan", "update"): "孩子帮您修改了用药计划",
     ("medication_plan", "deactivate"): "孩子帮您停用了用药计划",
 }
-NOTICE_TEXT = ANNOUNCEMENT_TEXT
 
 class ChangeService:
     def __init__(self, clock: Clock, settings: Settings):
@@ -59,7 +57,7 @@ class ChangeService:
     # ---- public port surface -------------------------------------------------
 
     def create(self, tx: Session, actor: Actor, elder_id: str, body: ChangeProposalWrite, now: datetime, *,
-               audio=None) -> ChangeProposal:
+               notice=None) -> ChangeProposal:
         require_elder_access(tx, actor, elder_id, "child")
         self._validate_target(tx, elder_id, body)
         snapshot = self._snapshot(tx, actor, elder_id, body)
@@ -71,15 +69,18 @@ class ChangeService:
         )
         tx.add(row)
         tx.flush()  # notification FK needs the proposal id
-        # `audio` was rendered OUTSIDE this write tx (see identity_flows.create_change);
-        # here it is only registered so the elder can complete a real playback.
+        # The spoken notice was prepared OUTSIDE this write tx (see
+        # identity_flows.create_change); here it is only registered, so the elder can
+        # complete a real spoken playback. A tone would never be accepted as evidence.
         audio_asset_id = None
-        if audio is not None:
+        if notice is not None:
             audio_asset_id = self.media.register_announcement(
-                tx, elder_id, content=audio.content, mime_type=audio.mime_type, duration_ms=audio.duration_ms).asset_id
+                tx, elder_id, content=notice.audio.content, mime_type=notice.audio.mime_type,
+                duration_ms=notice.audio.duration_ms).asset_id
         notification = self.notifications.enqueue(tx, actor, f"proposal:{row.id}", NotificationEnqueue(
             elder_id=elder_id, kind="profile_change", category="general",
-            title=TITLES[(body.target_type, body.operation)], text=NOTICE_TEXT,
+            title=TITLES[(body.target_type, body.operation)],
+            text=notice.text if notice is not None else TITLES[(body.target_type, body.operation)],
             audio_asset_id=audio_asset_id, repeat_count=1, due_at=now, proposal_id=row.id,
         ))
         # The port returns the Notification DTO (notification_id), not an ORM row.
@@ -136,6 +137,8 @@ class ChangeService:
         return self.view(row)
 
     def apply_due(self, tx: Session, now: datetime) -> list[ChangeProposal]:
+        """Server-side settlement entry. It runs as the reserved SYSTEM principal,
+        never as a fabricated user: the audit column records applied_by="timeout"."""
         rows = tx.scalars(select(ChangeProposalRow).where(
             ChangeProposalRow.status == "awaiting_decision",
             ChangeProposalRow.auto_apply_at.is_not(None),
@@ -143,7 +146,7 @@ class ChangeService:
         ).order_by(ChangeProposalRow.auto_apply_at)).all()
         settled = []
         for row in rows:
-            settled.append(self._apply(tx, self._principal_for_timeout(tx, row), row, now, applied_by="timeout"))
+            settled.append(self._apply(tx, SYSTEM_ACTOR, row, now, applied_by="timeout"))
         return settled
 
     # ---- internals -----------------------------------------------------------
@@ -211,7 +214,7 @@ class ChangeService:
 
     def _settle_if_due(self, tx: Session, row: ChangeProposalRow, now: datetime) -> None:
         if row.status == "awaiting_decision" and row.auto_apply_at is not None and row.auto_apply_at <= now:
-            self._apply(tx, self._principal_for_timeout(tx, row), row, now, applied_by="timeout")
+            self._apply(tx, SYSTEM_ACTOR, row, now, applied_by="timeout")
 
     def _apply(self, tx: Session, actor: Actor, row: ChangeProposalRow, now: datetime, *, applied_by: str) -> ChangeProposal:
         elder = tx.get(ElderProfile, row.elder_id)
@@ -235,10 +238,10 @@ class ChangeService:
         elif row.target_type == "reminder_settings":
             if row.base_version != elder.version:
                 return self._conflict(tx, row, "version_changed")
-            settings = dict(elder.reminder_settings_json or {})
-            settings.update(dict(row.patch or {}))
-            elder.reminder_settings_json = settings
-            self._bump(elder, now)
+            # B's frozen port owns the settings write: it bumps the profile version
+            # and retires/re-times already generated future goals in the same tx, so
+            # A must not touch reminder_settings_json or the version itself.
+            self.medication.update_settings(tx, actor, row.elder_id, row.base_version, self._patch_model(row))
             tx.flush()
         else:
             # Frozen contract: create has no target to read and no expected version;
@@ -277,19 +280,6 @@ class ChangeService:
     def _close_notification(self, tx: Session, row: ChangeProposalRow) -> None:
         if row.notification_id:
             self.notifications.mark_proposal_handled(tx, row.notification_id)
-
-    def _principal_for_timeout(self, tx: Session, row: ChangeProposalRow) -> Actor:
-        """Scanner settlement has no request Actor, but the frozen B/C ports require
-        one. The elder is the *principal* of their own change, so we pass the elder's
-        own identity - never a synthetic user - and the audit column records
-        applied_by="timeout" so nobody mistakes it for a user decision. This grants
-        nothing that the elder's own request would not already be allowed to do.
-
-        A genuinely actor-free path would need the B/C port signatures to accept a
-        system call; that is a contracts change for all three, tracked in the
-        handoff as the remaining item."""
-        elder = tx.get(ElderProfile, row.elder_id)
-        return Actor(elder.owner_user_id, Role.elder)
 
     def _encode_cursor(self, row: ChangeProposalRow) -> str:
         raw = f"{row.created_at.isoformat()}|{row.id}".encode()

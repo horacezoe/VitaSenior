@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.clock import Clock
 from app.core.errors import AppError
-from app.contracts.context import Actor, ElderAccess, WriteScope
+from app.contracts.context import Actor, ElderAccess, WriteScope, SYSTEM_USER_ID
 from app.schemas.enums import Role
 from app.models.identity import AuthSession, User, ElderProfile, FamilyBinding
 
@@ -23,6 +23,13 @@ def authenticate(tx: Session, token: str | None, clock: Clock) -> Actor:
 
 def require_elder_access(tx: Session, actor: Actor, elder_id: str, write_scope: WriteScope = "read") -> ElderAccess:
     elder = tx.get(ElderProfile, elder_id)
+    if actor.user_id == SYSTEM_USER_ID:
+        # The due-proposal scanner is the only system principal. It is a reserved id
+        # that AUTH never issues, so this cannot be reached from a request header;
+        # the applied action is still audited as applied_by="timeout".
+        if elder is None:
+            raise AppError(403, "ELDER_ACCESS_DENIED", "No access to this elder")
+        return ElderAccess(elder.id, elder.owner_user_id, "system")
     owner = elder is not None and elder.owner_user_id == actor.user_id and actor.role == Role.elder
     bound = elder is not None and actor.role == Role.child and tx.scalar(select(FamilyBinding.id).where(FamilyBinding.elder_id == elder_id, FamilyBinding.child_user_id == actor.user_id, FamilyBinding.status == "active")) is not None
     # Same denial for unknown and unauthorized elders: no existence oracle.

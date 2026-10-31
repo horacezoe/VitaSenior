@@ -10,7 +10,7 @@ from app.core.clock import FakeClock, local_date
 from app.core.uow import UnitOfWork
 from app.core.errors import AppError
 from app.contracts.context import Actor
-from app.contracts.media import GeneratedAudio
+from app.contracts.media import GeneratedAudio, SpokenNotice
 from app.main import create_app
 from app.core.config import Settings
 from app.models.agent import AgentTurn, AgentAction
@@ -77,7 +77,8 @@ def test_full_spoken_proposal_and_c_decision_use_real_a_b_state(live,outcome):
         proposal=app.state.services.changes.create(unit.session,child,elder,
             ProfileProposal(target_type='profile',target_id=elder,operation='update',base_version=1,
                             patch={'medical_notes':'补充社区复查记录'}),clock.now(),
-            audio=GeneratedAudio(spoken.content,spoken.mime_type,spoken.duration_ms))
+            notice=SpokenNotice(text=PROPOSAL_TEXT,
+                                audio=GeneratedAudio(spoken.content,spoken.mime_type,spoken.duration_ms)))
         unit.commit()
     with UnitOfWork(app.state.sessions,write=False) as unit:
         notice=app.state.services.notifications.query(unit.session,owner,elder).items[0]

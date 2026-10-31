@@ -143,29 +143,43 @@ def round_two(run: Run) -> None:
     if not elder or not elder_id:
         run.results.append(Result(rnd, "preconditions", PENDING, "round 1 did not reach an elder account"))
         return
+    # A future slot: B does not materialise goals for a time that has already passed
+    # today (the local clock is 12:00 Asia/Hong_Kong in this script).
     plan = run.req(rnd, "PLAN02 medication plan", "POST", f"/api/v1/elders/{elder_id}/medication-plans",
                    headers=hdr(elder, "r2-plan"),
                    json={"name": "演示药品A", "dose_display": "既定用量",
-                         "schedule": {"mode": "fixed", "slots": [{"slot_id": "morning", "local_time": "08:00"}]},
+                         "schedule": {"mode": "fixed", "slots": [{"slot_id": "evening", "local_time": "23:30"}]},
                          "start_date": "2026-10-30"})
+    plan_id = run.body(rnd, "plan", plan)["plan_id"] if plan is not None else None
     tasks = run.req(rnd, "TASK01 today's tasks", "GET", f"/api/v1/elders/{elder_id}/tasks?date=2026-10-30",
                     headers=elder)
     task_id = None
     if tasks is not None:
         items = run.body(rnd, "TASK01", tasks)["items"]
-        task_id = next((t["task_id"] for t in items if t["category"] == "medication"), None)
-    plan_id = run.body(rnd, "plan", plan)["plan_id"] if plan is not None else None
+        # Match the task to the plan we just created, not just any medication task.
+        task_id = next((t["task_id"] for t in items
+                        if t["category"] == "medication" and t["plan_id"] == plan_id), None)
     if task_id is None or plan_id is None:
-        run.results.append(Result(rnd, "REC02 medication taken", PENDING, "no medication task/plan yet (B task port)"))
+        run.results.append(Result(rnd, "REC02 medication taken", PENDING,
+                                  "no medication task for the new plan (check B task materialisation)"))
     else:
         run.req(rnd, "REC02 medication taken", "POST", f"/api/v1/elders/{elder_id}/checkins",
                 headers=hdr(elder, "r2-checkin"),
                 json={"type": "medication", "task_id": task_id, "occurred_at": "2026-10-30T04:00:00Z",
-                      "payload": {"plan_id": plan_id, "slot_id": "morning", "intake_status": "taken"}})
+                      "payload": {"plan_id": plan_id, "slot_id": "evening", "intake_status": "taken"}})
+    # A visible heartbeat is required before any receipt can be displayed.
+    run.req(rnd, "NOTI01 visible heartbeat", "POST", f"/api/v1/elders/{elder_id}/presence",
+            headers=elder, json={"client_id": "smoke", "visible": True})
+    # The proposal must carry the version the child actually saw (onboarding bumped it).
+    profile = run.req(rnd, "profile version for proposal", "GET", f"/api/v1/elders/{elder_id}/profile",
+                      headers=elder)
+    if profile is None:
+        return
+    base_version = run.body(rnd, "profile", profile)["version"]
     proposal = run.req(rnd, "CHANGE01 child proposal", "POST", f"/api/v1/elders/{elder_id}/change-proposals",
                        headers=hdr(child, "r2-proposal"),
                        json={"target_type": "profile", "target_id": elder_id, "operation": "update",
-                             "base_version": 1, "patch": {"medical_notes": "补充社区复查记录"}})
+                             "base_version": base_version, "patch": {"medical_notes": "补充社区复查记录"}})
     if proposal is None:
         return
     proposal_id = run.body(rnd, "CHANGE01", proposal)["proposal_id"]
@@ -178,17 +192,24 @@ def round_two(run: Run) -> None:
     if target is None:
         run.results.append(Result(rnd, "proposal notification", FAIL, "no notification linked to the proposal"))
         return
-    for event in ("displayed", "answered", "playback_completed"):
-        run.req(rnd, f"NOTI03 {event}", "POST", f"/api/v1/notifications/{target['notification_id']}/events",
-                headers=hdr(elder, f"r2-{event}"), json={"event_id": f"r2-{event}", "event_type": event})
-    run.req(rnd, "CHANGE04 reject in window", "POST", f"/api/v1/change-proposals/{proposal_id}/decision",
-            headers=hdr(elder, "r2-reject"), json={"decision": "reject"})
-    run.req(rnd, "profile unchanged after reject", "GET", f"/api/v1/elders/{elder_id}/profile", headers=elder)
+    receipts = [run.req(rnd, f"NOTI03 {event}", "POST", f"/api/v1/notifications/{target['notification_id']}/events",
+                       headers=hdr(elder, f"r2-{event}"), json={"event_id": f"r2-{event}", "event_type": event})
+                for event in ("displayed", "answered", "playback_completed")]
+    if any(receipt is None for receipt in receipts):
+        return
+    armed = run.req(rnd, "window armed after full playback", "GET", f"/api/v1/change-proposals/{proposal_id}",
+                    headers=elder)
+    if armed is not None and run.body(rnd, "proposal", armed)["auto_apply_at"] is None:
+        run.results.append(Result(rnd, "window armed after full playback", FAIL,
+                                  "auto_apply_at is null after a complete spoken playback"))
     if run.advance(61):
-        run.req(rnd, "scanner settles expired window", "GET", f"/api/v1/elders/{elder_id}/change-proposals?status=applied",
-                headers=elder)
+        settled = run.req(rnd, "timeout applies the change", "GET", f"/api/v1/change-proposals/{proposal_id}",
+                          headers=elder)
+        if settled is not None and run.body(rnd, "settled", settled)["status"] != "applied":
+            run.results.append(Result(rnd, "timeout applies the change", FAIL,
+                                      f"proposal ended as {run.body(rnd, 'settled', settled)['status']}"))
     else:
-        run.results.append(Result(rnd, "scanner settles expired window", PENDING, "live server: drive the clock externally"))
+        run.results.append(Result(rnd, "timeout applies the change", PENDING, "live server: drive the clock externally"))
 
 # ---- round 3: correction, memory, isolation, provider probe ------------------
 

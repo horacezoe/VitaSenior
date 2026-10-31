@@ -7,7 +7,8 @@ from app.main import create_app
 from app.core.config import Settings
 from app.core.clock import FakeClock
 from app.models.health import Notification as NotificationRow
-from app.schemas.health import MedicationPlan
+from app.models.identity import ElderProfile
+from app.schemas.health import MedicationPlan, ReminderSettings
 from app.seed import framework_seed
 from app.services.change_service import ChangeService
 
@@ -64,6 +65,7 @@ class FakeMedication:
     """Test double for B's ports only; normal operation never swallows a real 501."""
     def __init__(self):
         self.calls = []
+        self.settings_calls = []
         self.imports = []
         self.plans: dict[str, dict] = {}
 
@@ -91,6 +93,19 @@ class FakeMedication:
         raw['notes'] = getattr(patch, 'notes', None) or raw['notes']
         self.plans[target_id] = raw
         return MedicationPlan.model_validate(raw)
+
+    def update_settings(self, tx, actor, elder_id, expected_version, patch):
+        """Mirror B's port: bump the profile version and persist the merged settings."""
+        from app.core.errors import AppError
+        self.settings_calls.append({'elder_id': elder_id, 'expected_version': expected_version, 'patch': patch})
+        elder = tx.get(ElderProfile, elder_id)
+        if elder.version != expected_version:
+            raise AppError(409, 'VERSION_CONFLICT', 'Profile/settings version changed')
+        raw = dict(elder.reminder_settings_json or {})
+        raw.update(patch.model_dump(exclude_unset=True, mode='json'))
+        elder.reminder_settings_json = raw
+        elder.version += 1
+        return ReminderSettings(version=elder.version, **raw)
 
 class FakeHistory:
     def __init__(self):

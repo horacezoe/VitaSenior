@@ -341,6 +341,22 @@ C 原测试 `test_default_unwired_deployment_stays_501_and_capability_false` 的
 health 接口尚未开启 `health_capabilities`（`PLAN02/TASK01/REC01/REC02/REPORT01/NOTI02/DASH01`）。
 若把这 7 个已验证接口的开关临时打开，联调结果为 **27 ok / 4 pending / 0 failed**。
 
+### 11.6 回应 B 的收尾清单（`integration/f1`，最新）
+
+| B 的要求 | 落地 |
+| --- | --- |
+| 1. 设置提案调用 B 的 `update_settings`，同步未来目标 | `ChangeService._apply` 的 settings 分支改为调用冻结端口 `MedicationPort.update_settings(tx, actor, elder_id, base_version, patch)`；A 不再直接写 `reminder_settings_json`、也不再自己 `version += 1`（避免重复递增）。B 的 strict xfail 因此 XPASS，已按 B 授权移除标记，`tests/health/test_shared_settings_gap.py` 现为普通回归测试。 |
+| 2. 播报实际提案内容、替换提示音 | 删除合成提示音。新素材 `backend/fixtures/identity/*.wav`（5 段，Windows SAPI `Microsoft Huihui Desktop` 离线生成，16 kHz 单声道）+ `proposal_notices.json` 清单；`app/fixtures/proposal_notice.py` 按 (target_type, operation) 取段落，**通知 text 与音频逐字一致**。契约新增 `SpokenNotice(text, audio)`，`ChangePort.create(..., notice=...)`，仍遵守"事务外准备、事务内登记"。 |
+| 3. 统一系统授权入口 | 新增保留主体 `contracts/context.py: SYSTEM_ACTOR`（`user_id="system"`，AUTH 从不签发、users 表不含该 id）；`require_elder_access` 在角色判断前对系统主体短路并返回 `scope="system"`。`apply_due`/`_settle_if_due` 一律用它，**不再构造老人 Actor**；审计仍写 `applied_by="timeout"`。B/C 的 `authorize()` 都委托 A 的 access port，因此自动认可该系统主体，无需他们改代码。 |
+| 4. 联调脚本修正 | 药品计划改成未来 23:30 时段（B 不为当天已过时刻生成目标）；任务按 `plan_id` 精确匹配；回执前先发 `NOTI01` 可见心跳；提案 `base_version` 改为读取档案当前版本（原来写死 1，建档后必然冲突）。 |
+| 5. Agent 确认的可信来源 | `CheckinPort.create_or_update(..., *, source: Literal["user","agent_confirmed"] = "user")` 已冻结。来源由服务端参数决定、永不取自客户端 body；C 在确认动作执行时传 `agent_confirmed`，B 落库。 |
+
+**给 B 的关键证据**：把 `NOTI03` 临时打开后，联调脚本 **39 ok / 0 pending / 0 failed**——
+`displayed → answered → playback_completed → window armed → timeout applies the change` 全部通过，
+即"完整语音播报 → auto_apply_at → 60 秒后自动生效"已在真实 HTTP + 真实 B/C 端口上跑通。
+按提交状态（`NOTI03` 仍由 B 关闭）为 **34 ok / 3 pending / 0 failed**；
+`pytest tests -q` → **267 passed, 42 deselected**（无 xfail）。
+
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
 - C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/

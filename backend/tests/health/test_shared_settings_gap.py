@@ -1,19 +1,13 @@
-"""Executable A-owned integration gap; expected failure is never a pass.
+"""Regression: an approved settings proposal must retire already-generated future
+goals through B's frozen update_settings port.
 
-Remove the strict xfail after A routes approved settings through B's frozen
-update_settings port, preserving the caller's tx/version/authority.
+This was a strict xfail owned by A. It is a plain test now: A routes the settings
+branch through MedicationPort.update_settings, so B's implementation bumps the
+profile version and re-times/retires future goals in the same transaction.
 """
-import pytest
-
 from .test_activation import production, get, headers
 
 
-class SharedSettingsGap(AssertionError):
-    pass
-
-
-@pytest.mark.xfail(strict=True, raises=SharedSettingsGap,
-    reason="A ChangeService._apply settings branch bypasses MedicationPort.update_settings")
 def test_approved_settings_proposal_updates_existing_future_goals(production):
     p = production
     before = get(p, "reports/daily?date=2026-10-31")["completion"]["progress"]["exercise"]["expected"]
@@ -27,7 +21,5 @@ def test_approved_settings_proposal_updates_existing_future_goals(production):
         json={"decision": "accept"})
     assert decided.status_code == 200 and decided.json()["data"]["status"] == "applied", decided.text
     assert get(p, "reminder-settings")["exercise"]["enabled"] is False
-    actual = get(p, "reports/daily?date=2026-10-31")["completion"]["progress"]["exercise"]["expected"]
-    if actual == 1:
-        raise SharedSettingsGap("Proposal applied, settings disabled, but existing future exercise goal still counts as 1")
-    assert actual == 0
+    # The port must also retire the already-generated future exercise goal.
+    assert get(p, "reports/daily?date=2026-10-31")["completion"]["progress"]["exercise"]["expected"] == 0
