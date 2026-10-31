@@ -4,6 +4,7 @@ Saved tasks are the denominator; current plans never reconstruct past goals.
 """
 from __future__ import annotations
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 
 from pydantic import TypeAdapter
 from sqlalchemy import select
@@ -318,8 +319,11 @@ class CheckinService:
             SourceRef(type="checkin", id=row.id, version=row.version))
 
     def create_or_update(self, tx: Session, actor: Actor, elder_id: str,
-                         payload: CheckinWrite | CheckinUpdate, checkin_id: str | None = None) -> Checkin:
+                         payload: CheckinWrite | CheckinUpdate, checkin_id: str | None = None, *,
+                         source: Literal["user", "agent_confirmed"] = "user") -> Checkin:
         authorize(tx, actor, elder_id, "self", self.access)
+        if source not in {"user", "agent_confirmed"}:
+            invalid("Only trusted user or agent_confirmed provenance is accepted")
         row = tx.get(CheckinRow, checkin_id) if checkin_id else None
         if checkin_id and (row is None or row.elder_id != elder_id):
             raise AppError(404, "NOT_FOUND", "Record unavailable")
@@ -383,6 +387,7 @@ class CheckinService:
             tx.add(row)
         row.local_date, row.occurred_at = day, value.occurred_at
         row.payload_json = value.payload.model_dump(mode="json")
+        row.source = source
         row.slot_key = value.payload.meal_slot.value if value.type == "diet" else None
         row.task_id, row.updated_at = task.id if task else None, clock_now(self.clock)
         tx.flush()
