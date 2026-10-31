@@ -1,6 +1,6 @@
 # F2 B：MiMo TTS 握手与验收
 
-2026-10-31（Asia/Hong_Kong）。**真实 MiMo TTS 已通过正常工厂/AI02/媒体取回，人工实听待确认；ASR 延期。** 用户已确认文字、ASR、TTS 统一采用 MiMo；ASR 供应商选择不代表本轮已接通。
+2026-10-31（Asia/Hong_Kong）。**真实 MiMo TTS 已通过正常工厂/AI02/媒体取回，用户已确认“全文清楚、无截断”；ASR 延期。** 用户已确认文字、ASR、TTS 统一采用 MiMo；ASR 供应商选择不代表本轮已接通。
 
 ## 基线与协作进度
 
@@ -77,14 +77,14 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 
 - 模型 `mimo-v2.5-tts`，音色 `冰糖`，返回 `provider=real / supplier=mimo / is_mock=false`；Runtime 为 chat=mock / asr=mock / tts=real。
 - 新中文全文含末尾香港本地日期时间；合成和媒体登记约 **7.032 秒**，取回 **652844 字节 / 13600 ms / audio/wav**。严格完整 WAV/PCM 校验通过。
-- 本机证据：`backend/data/f2-audio-b/evidence/20261031T074100Z-7238915d/speech.wav` 与 `evidence.json`，均被 data/ 忽略。SHA-256 `ee2ef3983781d18405d4f075356f4fd379d41f372ccfe7f3dd98ccd52c8c5728`。`listened=false`；已提供给用户实听，未把字节验证当作逐字读全证据。
+- 本机证据：`backend/data/f2-audio-b/evidence/20261031T074100Z-7238915d/speech.wav` 与 `evidence.json`，均被 data/ 忽略。SHA-256 `ee2ef3983781d18405d4f075356f4fd379d41f372ccfe7f3dd98ccd52c8c5728`。用户已对该文件确认“全文清楚、无截断”，本机 manifest 记 `listened=true` 及用户确认来源/时间。该证据是实际文件实听，不代表手机 HTTPS/网页自动播放已验收。
 - 过程如实记录：第一次因 TTS_API_KEY 空未调用；复用本机 key 后一次沙箱网络传输失败；随后两次供应商响应到达，但被本地错误的 null transcript 校验拒绝（其中一次显式诊断）；补兼容回归后一次正式复验通过。实际到达供应商的请求共 3 次，各次均显式运行，没有自动重试。诊断只观察字段，没有绕过校验制造通过。
 
 ## 待 A 收口与下一步
 
 1. A 的公共测试 `tests/framework/test_shared_adaptation.py::test_provider_factory_separates_mock_and_real` 仍断言 B 模块不存在（RuntimeError 包含 real_tts.py）。模块现已交付，需由 A 改成有效配置可构造真实实例、非法配置拒启；B 不修改公共断言，也不把错误文案改成旧断言来掩盖阶段变化。
 2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
-3. 新中文 AI02→MEDIA03 已通过并保留音频；请实际播放核对全文，再做前端/真实端口验证。没有实听证据就保持该项未验收；不为重复验证扩大供应商请求数量。
+3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；下一步仅做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。
 4. A 合入 B 后更新公共测试、TTS env 示例和 FAST-05；C 的真实饮食主链继续用现成实现，不重复开发。ASR 只有 TTS 稳定且时间允许才考虑；当前延期，不接转码/新依赖。
 
-官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[鉴权与结束原因](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)。真实 TTS/媒体字节已验；人工实听、手机 HTTPS/自动播放、真实 TCP 音频联调与 ASR 尚未验收。
+官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[鉴权与结束原因](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)。真实 TTS/媒体字节与本机文件人工实听已验；手机 HTTPS/自动播放、真实 TCP 音频联调与 ASR 尚未验收。
