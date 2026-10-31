@@ -6,30 +6,17 @@ import { elderPath, localDay, query, type Schemas } from "../api/client";
 import { Button, useResource } from "./ui";
 type Anomaly = Schemas["HealthAnomaly"];
 export function AnomalyBanner({ anomalies }: { anomalies: Anomaly[] }) {
-  if (!anomalies.length) return null;
-  return (
-    <section className="anomaly-banner" aria-label="当日异常核对记录">
+  const active=anomalies.filter(a=>a.status==='active'), resolved=anomalies.filter(a=>a.status==='resolved');
+  if(!anomalies.length)return null;
+  return <>
+    {active.length>0 && <section className="anomaly-banner" aria-label="当日异常核对记录">
       <h2>异常核对提醒</h2>
-      {anomalies.map((a) => (
-        <article key={a.anomaly_id}>
-          <strong>{a.title}</strong>
-          <p>
-            {a.status === "resolved"
-              ? "后续核对已不再提示此项，此处保留当日历史。"
-              : a.detail}
-          </p>
-          <small>
-            {a.status === "resolved"
-              ? "后续核对已更新"
-              : "大模型提示的潜在问题，尚需专业核验"}{" "}
-            · {a.basis === "planned" ? "基于既定计划" : "基于已确认记录"} ·
-            AI核对线索
-          </small>
-        </article>
-      ))}
-    </section>
-  );
+      {active.map(a=><article key={a.anomaly_id}><strong>{a.title}</strong><p>{a.detail}</p><small>大模型提示的潜在问题，尚需专业核验 · {a.basis==='planned'?'基于既定计划':'基于已确认记录'} · AI核对线索</small></article>)}
+    </section>}
+    {resolved.length>0 && <details className="anomaly-history"><summary>已更新的核对记录（{resolved.length}）</summary>{resolved.map(a=><article key={a.anomaly_id}><strong>{a.title}</strong><p>后续核对已不再提示此项，保留先前记录供回看。</p></article>)}</details>}
+  </>;
 }
+
 export function alertKey(
   base: string,
   child: string,

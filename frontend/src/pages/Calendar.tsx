@@ -85,9 +85,9 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
             <button
               type="button"
               key={item.date}
-              aria-label={`${item.date}${item.anomalies?.length ? `，有${item.anomalies.length}项异常核对记录` : ""}${item.state === "complete" ? "，适用记录已完成" : item.state === "partial" ? "，部分记录" : item.state === "future" ? "，未来日期" : "，暂无记录"}`}
+              aria-label={`${item.date}${item.anomalies?.filter(a=>a.status === "active").length ? `，有${item.anomalies.filter(a=>a.status === "active").length}项异常核对记录` : ""}${item.state === "complete" ? "，适用记录已完成" : item.state === "partial" ? "，部分记录" : item.state === "future" ? "，未来日期" : "，暂无记录"}`}
               aria-pressed={day === item.date}
-              className={`state-${item.state} ${item.anomalies?.length ? "has-anomaly" : ""} ${day === item.date ? "selected" : ""}`}
+              className={`state-${item.state} ${item.anomalies?.filter(a=>a.status === "active").length ? "has-anomaly" : ""} ${day === item.date ? "selected" : ""}`}
               disabled={item.state === "future"}
               onClick={() => {
                 setDay(item.date);
@@ -95,7 +95,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
               }}
             >
               {Number(item.date.slice(-2))}
-              {!!item.anomalies?.length && (
+              {!!item.anomalies?.filter(a=>a.status === "active").length && (
                 <b className="anomaly-day-mark" aria-hidden>
                   !
                 </b>
@@ -110,7 +110,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
           <span>适用记录完成</span>
           <span>部分记录</span>
           <span>暂无记录</span>
-          {calendar.data?.days.some((d) => d.anomalies?.length) && (
+          {calendar.data?.days.some((d) => d.anomalies?.some(a=>a.status === "active")) && (
             <span className="anomaly-legend">! 异常核对记录</span>
           )}
         </div>

@@ -129,3 +129,16 @@ it("both roles show the same server cumulative and dated earnings; child footer 
   expect(child).toContain("建议您与长辈核对");
   expect(child).not.toContain("一句提醒");
 });
+
+it("historical reports and health overview omit routine safety availability banners for either role",()=>{
+ for(const role of ["elder","child"] as const) for(const safety of ["insufficient_data","unavailable"]){
+  Object.assign(report,{safety_review_status:safety});
+  for(const view of ["date","health"] as const){
+   const page=html(<DailyReport embedded view={view}/>,role);
+   expect(page).not.toContain("相互作用核对资料不足");
+   expect(page).not.toContain("本次相互作用核对暂未完成");
+   expect(page).toContain("三大打卡记录");
+  }
+ }
+ Object.assign(report,{safety_review_status:undefined});
+});

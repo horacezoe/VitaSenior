@@ -1,3 +1,5 @@
+import { coreVisual,percentageHue } from "../state/core-visual";
+import type { CSSProperties } from "react";
 import { Apple, Footprints, Pill, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Checkin, Schemas } from "../api/client";
@@ -29,9 +31,10 @@ export function ProgressTiles({ progress }: { progress: Schemas["Progress"] }) {
     <div className="progress-tiles">
       {(["diet", "exercise", "medication"] as const).map((category) => {
         const item = progress[category],
-          Icon = categoryIcons[category];
+          Icon = categoryIcons[category],
+          visual = coreVisual(category,item);
         return (
-          <div className={`progress-tile progress-${category}`} key={category}>
+          <div className={`progress-tile progress-${category} core-card core-${visual.tone}`} style={visual.percent === null ? undefined : {"--core-accent":`hsl(${percentageHue(visual.percent)} 70% 32%)`,"--core-tint":`hsl(${percentageHue(visual.percent)} 75% 95%)`} as CSSProperties} key={category}>
             <span className="progress-icon">
               <Icon size={23} strokeWidth={1.6} />
             </span>

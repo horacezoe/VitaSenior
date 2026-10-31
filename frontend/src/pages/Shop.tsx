@@ -1,3 +1,4 @@
+import { elderPath,type Schemas } from "../api/client";
 import { ChildNav } from "./Home";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -10,10 +11,11 @@ import {
   Empty,
   Success,
   ErrorNotice,
+  useResource,
 } from "../components/ui";
 import { ConfirmDialog } from "../components/forms";
 import { useSession } from "../state/session";
-import { products, makeOrder, type DemoOrder } from "../state/shop";
+import { products, recommendProducts, makeOrder, type DemoOrder } from "../state/shop";
 export default function Shop() {
   const { api, elderId, me } = useSession();
   if (!me)
@@ -27,6 +29,13 @@ export default function Shop() {
 function ShopContent() {
   const { api, elderId, me } = useSession(),
     elder = me?.bound_elders.find((e) => e.elder_id === elderId);
+  const context=useResource(`shop-context:${api.base}:${elderId}`,async()=>{
+    if(!elderId)return null;
+    const [profile,plans]=await Promise.all([api.get<Schemas["Profile"]>(elderPath(elderId,"profile")),api.get<Schemas["PlanList"]>(elderPath(elderId,"medication-plans")+"?active=true")]);
+    return {conditions:profile.conditions,allergies:profile.allergies,medicationNames:plans.items.map(p=>p.name),verified:profile.onboarding_status === "confirmed"};
+  });
+  const selection=recommendProducts(context.data || {verified:false});
+  const bundleTotal=selection.bundle.reduce((sum,p)=>sum+p.price,0);
   const scope = `vitasenior.shop.${api.base}.${me?.user.user_id}.${elderId}`;
   const [cart, setCart] = useState<Record<string, number>>({}),
     [review, setReview] = useState(false),
@@ -44,13 +53,13 @@ function ShopContent() {
     }
   });
   const [placed, setPlaced] = useState<DemoOrder | null>(null);
-  const total = products.reduce(
+  const total = selection.items.reduce(
     (sum, p) => sum + p.price * (cart[p.id] || 0),
     0,
   );
   const submit = () => {
     try {
-      const order = makeOrder(elderId!, elder?.display_name || "家人", cart);
+      const order = makeOrder(elderId!, elder?.display_name || "家人", cart,selection.items.map(p=>p.id));
       const next = [order, ...orders].slice(0, 20);
       localStorage.setItem(scope, JSON.stringify(next));
       setOrders(next);
@@ -76,21 +85,25 @@ function ShopContent() {
         <>
           <Card>
             <span className="eyebrow">为 {elder.display_name} 代买</span>
-            <h2>日常关怀包</h2>
-            <p>毛巾、保温杯、居家袜，让关心变成身边的小事。</p>
+            <h2>小银龄为家人挑选</h2>
+            <p>{selection.reason}</p>
+            <small>{selection.bundle.map(p=>p.name).join(" · ")}</small>
             <Button
               icon={Gift}
+              disabled={context.loading}
               onClick={() => {
-                setCart({ towel: 1, cup: 1, socks: 1 });
+                setCart(Object.fromEntries(selection.bundle.map(p=>[p.id,1])));
                 setReview(true);
               }}
             >
-              一键代买关怀包 · ¥107
+              一键代买关怀包 · ¥{bundleTotal}
             </Button>
             <p className="form-hint">更换家人请到设置中的家庭连接。</p>
           </Card>
+          {context.loading && <p className="form-hint">正在整理适合家人的选品…</p>}
+          {context.error != null && <p className="form-hint">暂时未能读取完整档案，先展示日常备餐用品。</p>}
           <div className="shop-grid">
-            {products.map((p) => (
+            {selection.items.map((p) => (
               <Card key={p.id}>
                 <span className="shop-art" aria-hidden>
                   {p.icon}
@@ -129,6 +142,10 @@ function ShopContent() {
               </Card>
             ))}
           </div>
+          <section className="section">
+            <h2>补充营养，先核对需要</h2>
+            {selection.extra.map(p=><Card key={p.id}><h3>{p.icon} {p.name}</h3><p>{p.note}</p><small>如已有医生或药师确认的补充方案，可与家人核对品种后再选择。</small></Card>)}
+          </section>
           <Button
             className="full"
             icon={ShoppingBag}
@@ -148,7 +165,7 @@ function ShopContent() {
             {orders.length ? (
               orders.map((o) => (
                 <Card className="section" key={o.id}>
-                  <span className="tag">{o.status} · 未付款 · 未配送</span>
+                  <span className="tag">{o.status === "演示订单" ? "待确认" : o.status} · 未付款 · 未配送</span>
                   <p>
                     {o.elderName} · ¥{o.total}
                   </p>
@@ -171,7 +188,7 @@ function ShopContent() {
             confirm={submit}
           >
             <p>送给：{elder.display_name}</p>
-            {products
+            {selection.items
               .filter((p) => cart[p.id] > 0)
               .map((p) => (
                 <p key={p.id}>

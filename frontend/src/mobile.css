@@ -147,3 +147,23 @@
 .report-greeting .avatar-orb{margin-left:auto;margin-right:auto;animation:reportGreeting 5s ease-in-out infinite}@keyframes reportGreeting{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}@media(prefers-reduced-motion:reduce){.report-greeting .avatar-orb{animation:none}}
 
 .anomaly-banner{border:2px solid #b33131;border-radius:18px;background:#fff1ef;padding:20px;margin:0 0 22px;color:#842828}.anomaly-banner article+article{border-top:1px solid #e8c1bc;margin-top:16px;padding-top:16px}.anomaly-dialog{border:3px solid #b33131;border-radius:22px;max-width:520px;width:calc(100% - 32px);padding:24px;color:#842828;background:#fff8f7}.anomaly-dialog::backdrop{background:#30141488}.anomaly-dialog section{margin:20px 0;border-top:1px solid #e8c1bc;padding-top:18px}.calendar-grid .has-anomaly{position:relative;outline:2px solid #b33131;outline-offset:-2px}.anomaly-day-mark{position:absolute;right:3px;top:0;color:#b33131;font-size:14px}.anomaly-legend{color:#b33131}
+
+/* Shared status treatment for elder/child daily, health overview and progress tiles. */
+.core-card,.core-detail{--core-accent:#60716b;--core-tint:#f2f5f3}
+.core-good{--core-accent:#167254;--core-tint:#eaf7ee}
+.core-caution{--core-accent:#946005;--core-tint:#fff5d8}
+.core-low{--core-accent:#ad3530;--core-tint:#fff0ed}
+.core-card.card,.core-card.progress-tile,.core-detail.card{background:var(--core-tint);border:1px solid color-mix(in srgb,var(--core-accent) 28%,white);border-top:4px solid var(--core-accent)}
+.core-card{display:flex;flex-direction:column;align-items:flex-start;gap:9px;transition:background-color .2s,border-color .2s}
+.core-card .core-icon,.core-card .progress-icon{color:var(--core-accent)}
+.core-card h3,.core-card p{margin:0}
+.core-card .core-state{font-size:14px;line-height:1.5;color:var(--core-accent);display:flex;align-items:center;gap:6px}
+.core-state:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--core-accent);flex-shrink:0}
+.core-card small{margin-top:auto;line-height:1.65}
+.core-meter{height:10px;width:100%;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--core-accent) 13%,white)}
+.core-meter span{display:block;height:100%;border-radius:inherit;background:var(--core-accent);transition:width .25s}
+.core-detail progress{accent-color:var(--core-accent)}
+.core-card.progress-tile{align-items:center}
+@media(prefers-reduced-motion:reduce){.core-card,.core-meter span{transition:none}}
+
+.anomaly-history{margin:12px 0;color:var(--muted,#63736c);font-size:13px}.anomaly-history summary{cursor:pointer}.anomaly-history article{padding:12px;background:#f1f5f2;border-radius:12px;margin-top:8px}

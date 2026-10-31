@@ -60,8 +60,8 @@ def test_catalog_only_contains_fictional_summaries_and_seeding_preserves_rows(en
     response = client.get('/api/v1/demo/personas')
     assert response.status_code == 200
     data = response.json()['data']
-    assert data['is_mock'] is True and len(data['items']) == 14
-    assert sum(bool(p['conditions']) for p in data['items']) == 12
+    assert data['is_mock'] is True and len(data['items']) == len(SAMPLE_PROFILES) + 1
+    assert sum(bool(p['conditions']) for p in data['items']) == sum(bool(p['profile']['conditions']) for p in SAMPLE_PROFILES.values())
     assert all(set(p) == {'persona_id', 'display_name', 'conditions', 'has_community_record'} for p in data['items'])
     with UnitOfWork(app.state.sessions) as uow:
         row = uow.session.get(CommunityRecord, 'community_sample_002')
@@ -74,7 +74,7 @@ def test_catalog_only_contains_fictional_summaries_and_seeding_preserves_rows(en
         seed_community_records(uow.session)
         uow.commit()
     with app.state.sessions() as tx:
-        assert tx.scalar(select(func.count()).select_from(CommunityRecord)) == 13
+        assert tx.scalar(select(func.count()).select_from(CommunityRecord)) == len(SAMPLE_PROFILES)
         assert tx.get(CommunityRecord, 'community_sample_002').sample_json['profile']['medical_notes'] == '保留既有社区数据'
 
 
@@ -239,7 +239,7 @@ def test_startup_adds_new_tables_to_existing_database_without_changing_profiles(
             original = tx.get(ElderProfile, 'old-elder')
             assert original.profile_json['display_name'] == '保留的老人档案'
             assert original.onboarding_status == 'confirmed' and original.version == 7
-            assert tx.scalar(select(func.count()).select_from(CommunityRecord)) == 13
+            assert tx.scalar(select(func.count()).select_from(CommunityRecord)) == len(SAMPLE_PROFILES)
             assert tx.scalar(select(func.count()).select_from(DemoIdentity)) == 0
 
 

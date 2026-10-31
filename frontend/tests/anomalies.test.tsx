@@ -47,3 +47,9 @@ it("deduplicates polls, retains newer resolutions and allows changed findings to
     alertKey("base", "child2", "elder", alert("a")),
   );
 });
+
+it("resolved findings stay auditable without a red active warning",()=>{
+ const text=renderToStaticMarkup(<AnomalyBanner anomalies={[alert("a",2,"resolved")]} />);
+ expect(text).toContain("已更新的核对记录");expect(text).toContain("<details");
+ expect(text).not.toContain('class="anomaly-banner"');expect(text).not.toContain("异常核对提醒");
+});

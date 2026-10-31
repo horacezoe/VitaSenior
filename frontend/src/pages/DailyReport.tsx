@@ -1,5 +1,7 @@
+import { CoreDataCards,CoreMeter } from "../components/CoreDataCards";
+import { coreVisual } from "../state/core-visual";
 import { AnomalyBanner } from "../components/Anomalies";
-import { familyReportTip } from "../state/report";
+import { familyReportTip, factualAdvice } from "../state/report";
 import { useEffect, useState } from "react";
 import ReportSpeech from "../components/ReportSpeech";
 import { Link, useParams } from "react-router-dom";
@@ -12,7 +14,7 @@ import {
   Empty,
   useResource,
 } from "../components/ui";
-import { RecordRow, categoryIcons } from "../components/records";
+import { RecordRow } from "../components/records";
 import { useSession } from "../state/session";
 import { useData } from "../state/data";
 import {
@@ -87,7 +89,7 @@ export default function DailyReport({
           {r.ai_status !== "ready" && (
             <p className="note-card">
               {report.loading
-                ? "正在综合档案、记忆和当日打卡记录生成建议…"
+                ? "正在整理这一天的记录…"
                 : r.ai_status === "unavailable"
                   ? "AI日报暂时未能生成，可稍后重试；下方真实记录仍可查看。"
                   : "AI日报尚未配置，下方为实际打卡数据。"}{" "}
@@ -103,22 +105,12 @@ export default function DailyReport({
               </button>
             </p>
           )}
-          {r.safety_review_status === "insufficient_data" && (
-            <p className="form-hint">
-              相互作用核对资料不足，请先核对药品名称或饮食记录；这不代表已确认没有相互作用。
-            </p>
-          )}
-          {r.safety_review_status === "unavailable" && (
-            <p className="form-hint">
-              本次相互作用核对暂未完成，稍后可重试；已有核对记录仍保留。
-            </p>
-          )}
           {kind ? (
             <>
               <p className="note-card">
-                {advice || "暂未生成本项AI建议，请先核对下方的真实记录。"}
+                {advice || factualAdvice(r,kind)}
               </p>
-              <Card>
+              <Card className={`core-detail core-${coreVisual(kind,r.completion.progress[kind],r.records[kind].filter(x=>!x.cancelled).length).tone}`} >
                 <h2>{dimensionNames[kind]}指标与进度</h2>
                 {kind === "diet" ? (
                   Object.entries(m.groups).map(([g, n]) => (
@@ -149,14 +141,7 @@ export default function DailyReport({
                         ? `已记录${m.minutes}分钟运动`
                         : `明确服用记录率：${m.adherence === null ? "未设计划" : m.adherence + "%"}`}
                     </label>
-                    <progress
-                      value={
-                        kind === "exercise"
-                          ? r.completion.progress.exercise.completed
-                          : r.completion.progress.medication.completed
-                      }
-                      max={Math.max(1, r.completion.progress[kind].expected)}
-                    />
+                    {kind === "medication" ? (m.adherence !== null && <CoreMeter percent={Math.max(0,Math.min(100,m.adherence))} label="服药记录率" />) : <progress value={r.completion.progress.exercise.completed} max={Math.max(1,r.completion.progress.exercise.expected)} />}
                   </div>
                 )}
                 <p className="form-hint">
@@ -262,33 +247,7 @@ export default function DailyReport({
                 />
               )}
               <h2 className="section">三大打卡记录</h2>
-              <div className="report-dimensions">
-                {(["diet", "exercise", "medication"] as const).map((k) => {
-                  const Icon = categoryIcons[k],
-                    p = r.completion.progress[k];
-                  return (
-                    <Link
-                      className="card report-dimension"
-                      key={k}
-                      to={`/daily/${day}/${k}`}
-                    >
-                      <Icon size={30} />
-                      <h3>{dimensionNames[k]}</h3>
-                      <strong>
-                        {r.records[k].length ? "已打卡" : "未打卡"}
-                      </strong>
-                      <p>
-                        {k === "diet"
-                          ? `膳食信号：${p.completed >= p.expected && p.expected > 0 ? "绿灯 · 餐次记录齐全" : r.records.diet.length ? "黄灯 · 仍有待核对餐次" : "灰色 · 尚无记录"}`
-                          : k === "exercise"
-                            ? `运动${m.minutes}分钟`
-                            : `明确服用记录率 ${m.adherence === null ? "未设计划" : m.adherence + "%"}`}
-                      </p>
-                      <small>已记录{r.records[k].length}条 · 查看详情 →</small>
-                    </Link>
-                  );
-                })}
-              </div>
+              <CoreDataCards report={r} day={day} />
               {role === "child" && (
                 <p className="note-card">{familyReportTip(r)}</p>
               )}

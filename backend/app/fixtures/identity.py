@@ -75,3 +75,18 @@ def match_sample(sample_identity_key: str) -> dict | None:
 from app.fixtures.clinical_samples import upgrade_samples
 LEGACY_SAMPLE_PROFILES = deepcopy(SAMPLE_PROFILES)
 SAMPLE_PROFILES = upgrade_samples(LEGACY_SAMPLE_PROFILES)
+
+# Roadshow story: independent authored fictional household, never a rename of an existing elder.
+SAMPLE_PROFILES['community_sample_014'] = {
+    'record_number':'VS-DEMO-014','community_name':'银龄社区健康服务中心',
+    'profile':{'display_name':'张奶奶','birth_date':'1953-04-18','sex':'female',
+        'conditions':['高血压','2型糖尿病'],'allergies':[],
+        'medical_notes':'汽车厂退休质检员，居家养老；女儿在广州工作，平时向女儿报喜不报忧。高血压12年、2型糖尿病7年，稳定随访；最近复查血压138/82 mmHg、糖化血红蛋白7.1%、eGFR 76 mL/min/1.73m²。本人暂未报告药物过敏，仍需建档核对；无已登记严重肝病或近期脱水。看体检报告和记医生叮嘱有困难，不熟悉健康工具。近期购买西柚，尚未确认食用。所列为既有处方片段。',
+        'source':'community_mock'},
+    'medication_templates':[
+        {'template_key':'a','plan':{'name':'非洛地平缓释片','dose_display':'2.5 mg，每日1次，早晨口服，整片吞服；空腹或与清淡食物同服','schedule':{'mode':'fixed','slots':[{'slot_id':'morning','local_time':'08:00'}]},'start_date':None,'notes':'既有降压处方，建档时核对，不自动调整。'}},
+        {'template_key':'b','plan':{'name':'盐酸二甲双胍缓释片','dose_display':'500 mg，每日1次，随晚餐口服，整片吞服','schedule':{'mode':'fixed','slots':[{'slot_id':'evening','local_time':'18:30'}]},'start_date':None,'notes':'既有控糖处方，建档时核对，不自动调整。'}}],
+    'history_key':'community_sample_014',
+    'history_medication':[{'plan_key':'a','slot_id':'morning'},{'plan_key':'b','slot_id':'evening'}],
+    'history_activity':'散步','history_minutes':20,
+}

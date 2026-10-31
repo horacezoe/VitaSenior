@@ -20,13 +20,17 @@ def same_plan(value,old):return all(value.get(k)==old.get(k) for k in FIELDS)
 def upgrade(tx,now):
     counts=dict(sources=0,drafts=0,profiles=0,plans=0,tasks=0,skipped=0)
     for key,new in SAMPLE_PROFILES.items():
-        old=LEGACY_SAMPLE_PROFILES[key];record=tx.get(CommunityRecord,key)
+        old=LEGACY_SAMPLE_PROFILES.get(key);record=tx.get(CommunityRecord,key)
+        if old is None:
+            if record is None:
+                tx.add(CommunityRecord(id=key,record_number=new['record_number'],community_name=new['community_name'],sample_json=deepcopy(new)));counts['sources']+=1
+            continue
         if record and record.sample_json==old:
             record.sample_json=deepcopy(new);record.community_name=new['community_name'];counts['sources']+=1
         elif record and record.sample_json!=new:counts['skipped']+=1
     for elder,identity in tx.execute(select(ElderProfile,DemoIdentity).join(DemoIdentity,DemoIdentity.user_id==ElderProfile.owner_user_id)):
         key=identity.community_record_id
-        if key not in SAMPLE_PROFILES:continue
+        if key not in SAMPLE_PROFILES or key not in LEGACY_SAMPLE_PROFILES:continue
         old,new=LEGACY_SAMPLE_PROFILES[key],SAMPLE_PROFILES[key]
         old_profile={k:v for k,v in old['profile'].items() if k!='source'}
         new_profile={k:v for k,v in new['profile'].items() if k!='source'}
