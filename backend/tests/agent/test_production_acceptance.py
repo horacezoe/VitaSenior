@@ -149,8 +149,9 @@ def test_actual_b_correction_invalidates_pattern_in_new_conversation(live):
         assert app.state.services.memory.context(unit.session,owner,elder).entries==[]
 
 
-@pytest.mark.xfail(strict=True, reason='A CHANGE01 still selects a category-only recording instead of the actual submitted values')
 def test_default_change_http_notification_reads_actual_patch_values(live):
+    """A narrates every submitted field, so the default HTTP notification text must
+    carry the actual value (this was a strict xfail owned by A)."""
     _, client, _, seed, headers = live
     elder = seed['elder']['elder_id']
     created = client.post(f'/api/v1/elders/{elder}/change-proposals',
