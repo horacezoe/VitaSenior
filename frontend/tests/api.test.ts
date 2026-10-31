@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Api, ApiError, localDay, query, WriteKey } from "../src/api/client";
+import { Api, ApiError, friendlyError, localDay, query, WriteKey } from "../src/api/client";
 
 afterEach(() => vi.unstubAllGlobals());
 it("cancels the media-ticket lookup on hangup rather than leaving a background request", async () => {
@@ -137,4 +137,9 @@ it("formats Hong Kong dates and preserves false values and zero in query paramet
   expect(query({ active: false, limit: 0, cursor: undefined })).toBe(
     "?active=false&limit=0",
   );
+});
+
+it("explains invalid login and expired codes in user-facing language",()=>{
+ expect(friendlyError(new ApiError(401,"LOGIN_CODE_INVALID","Only allocated demo accounts may log in"))).toContain("手机号码、身份或验证码不匹配");
+ expect(friendlyError(new ApiError(401,"CHALLENGE_EXPIRED","Expired"))).toContain("重新获取");
 });

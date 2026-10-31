@@ -344,7 +344,7 @@ function CumulativeEggs({
         {summary?.on_date ?? today} 枚
       </p>
       <small>
-        累计按服务端已确认的非演示打卡核对；重复提交与更正不重复计分，取消暂不扣回。
+        累计按服务端已确认的日常打卡核对；重复提交与更正不重复计分，取消暂不扣回。
       </small>
     </Card>
   );

@@ -95,7 +95,7 @@ export function ElderHome() {
         <div className="hero-badge">
           <span className="status-dot" />
           {runtime?.providers.chat === "mock"
-            ? "演示模式 · 小银龄陪伴中"
+            ? "小银龄陪伴中"
             : "今天，也有小银龄陪着你"}
         </div>
         <Avatar />

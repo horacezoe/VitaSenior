@@ -20,7 +20,7 @@ const sourceNames = {
   explicit_statement: "本人明确表达",
   observed_pattern: "多日记录归纳",
   user_correction: "本人纠正",
-  demo_seed: "历史演示",
+  demo_seed: "历史资料",
 };
 export default function Memory() {
   const { api, elderId, role } = useSession(),

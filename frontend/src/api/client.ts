@@ -25,6 +25,8 @@ export class ApiError extends Error {
 }
 
 const messages: Record<string, string> = {
+  LOGIN_CODE_INVALID: "手机号码、身份或验证码不匹配，请核对后重试。",
+  CHALLENGE_EXPIRED: "验证码已过期或已使用，请重新获取。",
   UNAUTHENTICATED: "请重新登录后继续。",
   ONBOARDING_ALREADY_CONFIRMED: "档案已经确认，请返回首页查看。",
   DEMO_IDENTITY_INVALID: "账号信息已变化，请核对后重新登录。",

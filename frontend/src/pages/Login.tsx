@@ -13,20 +13,18 @@ import {
 } from "../components/ui";
 
 export default function Login() {
-  const { api, role, setRole, login, demo, createDemo, connectionError } =
-    useSession();
+  const { api, role, setRole, login, connectionError } = useSession();
   const navigate = useNavigate(),
     action = useAction();
   const [phone, setPhone] = useState(""),
     [code, setCode] = useState(""),
     [challenge, setChallenge] = useState<string | null>(null);
-  const [demoCode, setDemoCode] = useState<string | null>(null);
   const changeRole = (value: "elder" | "child") => {
+    action.clearError();
     setRole(value);
     setPhone("");
     setChallenge(null);
     setCode("");
-    setDemoCode(null);
   };
   const sendCode = () =>
     action.run(async (keys) => {
@@ -38,7 +36,6 @@ export default function Login() {
         keys.for(path, body),
       );
       setChallenge(value.challenge_id);
-      setDemoCode(value.demo_code || null);
     });
   const submit = () =>
     action.run(async (keys) => {
@@ -52,20 +49,6 @@ export default function Login() {
       );
       login(value);
       navigate(role === "elder" ? "/elder" : "/child", { replace: true });
-    });
-  const quickDemo = () =>
-    action.run(async () => {
-      const family = demo || (await createDemo()),
-        account =
-          role === "elder" ? family.elder_account : family.child_account;
-      setPhone(account.phone);
-      const issued = await api.post<Schemas["CodeResponse"]>(
-        "/api/v1/auth/code",
-        account,
-      );
-      setChallenge(issued.challenge_id);
-      setDemoCode(issued.demo_code || null);
-      setCode(issued.demo_code || "");
     });
   return (
     <main className="login-page">
@@ -128,6 +111,7 @@ export default function Login() {
               pattern="[0-9]{11}"
               maxLength={11}
               onChange={(e) => {
+                action.clearError();
                 setPhone(e.target.value);
                 setChallenge(null);
               }}
@@ -136,11 +120,7 @@ export default function Login() {
           {challenge && (
             <Field
               label="验证码"
-              hint={
-                demoCode
-                  ? `当前为演示验证，验证码 ${demoCode}`
-                  : "请填写收到的验证码"
-              }
+              hint="请填写验证码"
             >
               <input
                 disabled={action.busy}
@@ -155,7 +135,7 @@ export default function Login() {
           )}
           <ErrorNotice error={action.error} />
           {connectionError && (
-            <p className="form-hint">暂未连上服务，可在连接设置中核对地址。</p>
+            <p className="form-hint">暂时未能连接服务，请稍后重试。</p>
           )}
           <Button
             type="submit"
@@ -166,21 +146,10 @@ export default function Login() {
             {challenge ? "安心登录" : "获取验证码"}
           </Button>
         </form>
-        <button
-          type="button"
-          className="text-button demo-entry"
-          disabled={action.busy}
-          onClick={() => {
-            void quickDemo();
-          }}
-        >
-          {demo ? "使用这组演示家庭" : "先体验一下演示家庭"}
-          <ArrowRight size={15} />
-        </button>
       </section>
       <footer className="login-footer">
         <span>银龄有伴，日常心安</span>
-        <a href="/settings">连接与体验设置</a>
+
       </footer>
     </main>
   );

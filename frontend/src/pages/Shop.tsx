@@ -62,9 +62,9 @@ function ShopContent() {
     }
   };
   return (
-    <Page title="给家人的小心意" subtitle="虚拟商城 · 演示专用">
+    <Page title="给家人的小心意" subtitle="为家人挑选日常所需">
       <p className="note-card">
-        商品、价格和订单均为演示。不产生真实付款、扣款或配送。
+        当前订单仅供预览，不会付款或配送。
       </p>
       {!elder ? (
         <Empty title="先连接一位家人">
@@ -135,16 +135,16 @@ function ShopContent() {
             disabled={!total}
             onClick={() => setReview(true)}
           >
-            核对演示购物车 · ¥{total}
+            核对购物车 · ¥{total}
           </Button>
           {placed && (
             <Success>
-              已创建给{placed.elderName}的演示订单，未扣款、未发货。
+              已创建给{placed.elderName}的预览订单，未扣款、未发货。
             </Success>
           )}
           <ErrorNotice error={error} />
           <section className="section">
-            <h2>本设备的演示订单</h2>
+            <h2>本设备的预览订单</h2>
             {orders.length ? (
               orders.map((o) => (
                 <Card className="section" key={o.id}>
@@ -161,7 +161,7 @@ function ShopContent() {
                 </Card>
               ))
             ) : (
-              <p className="form-hint">还没有演示订单。</p>
+              <p className="form-hint">还没有订单记录。</p>
             )}
           </section>
           <ConfirmDialog
@@ -178,7 +178,7 @@ function ShopContent() {
                   {p.name} × {cart[p.id]} · ¥{p.price * cart[p.id]}
                 </p>
               ))}
-            <strong>演示总额 ¥{total}</strong>
+            <strong>合计 ¥{total}</strong>
             <p>确认后仅保存在本设备，不进行真实交易。</p>
           </ConfirmDialog>
         </>
