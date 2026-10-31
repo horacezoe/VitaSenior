@@ -26,4 +26,4 @@ powershell.exe -NoProfile -NonInteractive -File fixtures/agent/generate_proposal
 python -m pytest tests/agent/test_proposal_notice.py -q
 ```
 
-A 当前 HTTP 仍调用自己的按类别录音。C 没有改 A 的文件；A 必须按完整 body 接入上述准备器，并在 ChangeService 校验 notice.text 与当前目标完整文字一致、无音频时也存完整文字。五段 C 素材通过真实 ports 的测试不等于默认 CHANGE01 HTTP 已完成替换。NOTI03 继续关闭，具体接手点见 C 交接。
+A 已在 `666b317` 将默认 CHANGE01 HTTP 接到 C 的完整 body 准备器，删除旧按类别录音；B 的 `d8c2ad1` 已包含真实内容 HTTP 回归并开启 NOTI03。无匹配语音时保存完整文字、audio=null、保持 pending_notice，不启动窗口；固定样例满足本轮 MVP，不代表任意文本 TTS 或手机实际播放已经验收。具体结果见 C 最新交接。

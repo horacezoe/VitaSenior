@@ -62,7 +62,7 @@ def test_default_wiring_runtime_and_all_seven_c_routes(live):
     assert runtime.json()['data']['providers']=={'chat':'mock','asr':'mock','tts':'mock'}
     for op in ['AI01','AI02','AGENT01','AGENT02','MEM01','MEM02','MEM03','CHANGE04']:
         assert runtime.json()['data']['capabilities'][op] is True
-    assert runtime.json()['data']['capabilities']['NOTI03'] is False
+    assert runtime.json()['data']['capabilities']['NOTI03'] is True
 
 
 @pytest.mark.parametrize('outcome',['unplayed','reject','timeout'])
