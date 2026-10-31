@@ -11,6 +11,7 @@ from app.core.clock import local_date
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.providers.planning import Plan, PlannedAction, Snapshot, request_digest
+from app.providers.dialogue import control_plan
 from app.schemas.agent import Action, AgentTurnWrite
 from app.schemas.health import CheckinWrite
 from app.schemas.identity import ProfileUpdate
@@ -48,23 +49,16 @@ class MockUnderstanding:
             return PlannedAction(public, {"elder_id": request.elder_id, **execution})
 
         text = (request.text or "").strip()
+        if fixture is None:
+            controlled = control_plan(request, snapshot, provider='mock')
+            if controlled is not None:
+                return controlled
         if fixture is None and text in {"我喜欢什么", "我的偏好是什么", "你记得我的偏好吗"}:
             preferences = [entry.text for entry in snapshot.memory.entries if entry.kind == "food_preference"]
             return result("health_qa", "已保存的偏好：" + "；".join(preferences) if preferences else "目前没有已保存的饮食偏好，您可以明确告诉我。")
         if fixture is None and text == "你观察到什么规律":
             patterns = [entry.text for entry in snapshot.memory.entries if entry.source_type == "observed_pattern"]
             return result("health_qa", "有效证据支持的规律：" + "；".join(patterns) if patterns else "还没有足够的有效日期记录来归纳规律。")
-        if fixture is None and text in {"确认", "确认记录", "好的，确认"}:
-            candidates = snapshot.pending_action_ids
-            selected = request.context.pending_action_id
-            if selected is not None and selected not in candidates:
-                raise AppError(404, "NOT_FOUND", "Pending action unavailable in this conversation")
-            if selected is None and len(candidates) == 1:
-                selected = candidates[0]
-            if selected is None:
-                return result("clarify", "请指定要确认的动作。")
-            return result("clarify", "正在确认您指定的动作。", decision=selected)
-
         if fixture == "meal_lunch":
             payload = {"meal_slot": "lunch", "foods": ["青菜", "豆腐", "米饭"],
                        "food_groups": ["vegetable", "protein", "staple"],

@@ -182,7 +182,7 @@ def test_non_diet_or_historical_intent_does_not_call_model_or_prepare_medication
 
 def test_real_confirmation_uses_only_validated_pending_context_without_model_call():
     body, snap = inputs()
-    body = body.model_copy(update={'text': '确认'})
+    body = body.model_copy(update={'text': '确认', 'conversation_id': 'owned-conversation'})
     snap = replace(snap, pending_action_ids=('owned-pending',))
     plan = provider(lambda request: pytest.fail('Confirmation must not infer or re-execute a model intent')).plan(body, snap)
     assert plan.decision_action_id == 'owned-pending' and plan.actions == () and plan.chat_provider == 'not_used'

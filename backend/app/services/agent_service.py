@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, literal_column
 from sqlalchemy.orm import Session
 
 from app.contracts.bundle import ServiceBundle
@@ -21,7 +21,7 @@ from app.core.clock import Clock, local_date
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.models.agent import AgentAction as ActionRow, AgentTurn as TurnRow
-from app.providers.planning import Plan, Snapshot, request_digest
+from app.providers.planning import ConversationDraft, Plan, PlannedAction, Snapshot, request_digest
 from app.providers.mock_audio import Speech
 from app.services.memory_service import MemoryService
 from app.schemas.agent import (
@@ -79,9 +79,21 @@ class AgentService:
             return None
         if row.actor_user_id != actor.user_id:
             raise AppError(403, "ELDER_ACCESS_DENIED", "Turn unavailable")
-        if row.request_json != request.model_dump(mode="json"):
+        saved_request = {key: value for key, value in row.request_json.items() if key != '_workflow'}
+        if saved_request != request.model_dump(mode="json"):
             raise AppError(409, "IDEMPOTENCY_CONFLICT", "client_turn_id reused with different input")
         return AgentTurn.model_validate(row.response_json)
+
+    @staticmethod
+    def _latest_turn(tx, actor, elder_id, conversation_id):
+        if conversation_id is None:
+            return None
+        # SQLite rowid preserves insertion order even when FakeClock gives all
+        # turns the same timestamp. No shared schema or second state table.
+        return tx.scalar(select(TurnRow).where(
+            TurnRow.elder_id == elder_id, TurnRow.actor_user_id == actor.user_id,
+            TurnRow.conversation_id == conversation_id,
+        ).order_by(literal_column('agent_turns.rowid').desc()).limit(1))
 
     def read_snapshot(self, tx: Session, actor: Actor, request: AgentTurnWrite, *,
                       profile: Profile | None = None, tasks: Sequence[DailyTask] = (),
@@ -99,10 +111,42 @@ class AgentService:
             ActionRow.expires_at > self.clock.now())
         if request.conversation_id:
             pending = pending.where(TurnRow.conversation_id == request.conversation_id)
+        pending = pending.where(TurnRow.actor_user_id == actor.user_id)
+        selected = self._owned_action(tx, actor, request.context.pending_action_id) if request.context.pending_action_id else None
+        conversation_id = request.conversation_id or (tx.get(TurnRow, selected.turn_id).conversation_id if selected else None)
+        previous = self._latest_turn(tx, actor, request.elder_id, conversation_id)
+        recent = tx.scalars(select(TurnRow).where(
+            TurnRow.elder_id == request.elder_id, TurnRow.actor_user_id == actor.user_id,
+            TurnRow.conversation_id == conversation_id,
+        ).order_by(literal_column('agent_turns.rowid').desc()).limit(6)).all() if conversation_id else []
+        history = tuple((item.response_json.get('transcript', '')[:1000], item.response_json['reply']['text'][:400])
+                        for item in reversed(recent) if item.response_json.get('scene') in {'health_qa', 'ingredient_advice'}
+                        and item.response_json.get('providers', {}).get('chat') == 'real')
+        workflow = previous.request_json.get('_workflow', {}) if previous else {}
+        draft = ConversationDraft.model_validate(workflow['draft']) if workflow.get('draft') else None
+        if draft is not None:
+            for asset_id in draft.image_asset_ids:
+                self.services.media.get_asset(tx, actor, asset_id)
+        active = workflow.get('active_action_id')
+        if previous is not None and '_workflow' not in previous.request_json:
+            # Continue a pre-upgrade conversation without rewriting its data.
+            legacy = [a['action_id'] for a in previous.response_json.get('actions', []) if a['status'] == 'pending']
+            active = legacy[0] if len(legacy) == 1 else None
+        if selected is None and active:
+            selected = self._owned_action(tx, actor, active)
+        selected_plan = None
+        if selected is not None:
+            original_turn = tx.get(TurnRow, selected.turn_id)
+            if conversation_id != original_turn.conversation_id:
+                raise AppError(404, 'NOT_FOUND', 'Action is not in this conversation')
+            public = TypeAdapter(Action).validate_python({**selected.payload_json['public'], 'status': selected.status})
+            selected_plan = PlannedAction(public, dict(selected.payload_json))
         return Snapshot(request.elder_id, self.clock.now(),
                         self.services.memory.context(tx, actor, request.elder_id),
                         profile, tuple(tasks), dict(medication_slots or {}),
-                        tuple(tx.scalars(pending).all()))
+                        tuple(tx.scalars(pending).all()), conversation_id=conversation_id,
+                        conversation_revision=previous.id if previous else None,
+                        draft=draft, selected_action=selected_plan, active_action_id=active, dialogue_history=history)
 
     def record_turn(self, tx: Session, actor: Actor, request: AgentTurnWrite,
                     snapshot: Snapshot, plan: Plan, *, speech: Speech | None = None,
@@ -113,6 +157,9 @@ class AgentService:
             return old
         if snapshot.elder_id != request.elder_id or plan.request_hash != request_digest(request):
             raise AppError(409, "VERSION_CONFLICT", "Prepared plan does not match this request")
+        latest = self._latest_turn(tx, actor, request.elder_id, snapshot.conversation_id)
+        if (latest.id if latest else None) != snapshot.conversation_revision:
+            raise AppError(409, 'VERSION_CONFLICT', 'Conversation changed while planning; retry the current turn')
         memory = self.services.memory.context(tx, actor, request.elder_id)
         if memory.version != snapshot.memory.version:
             raise AppError(409, "VERSION_CONFLICT", "Memory changed while provider was running",
@@ -124,19 +171,32 @@ class AgentService:
             current = self.services.medication.get_plan(tx, actor, prepared.payload['checkin']['payload']['plan_id'])
             if current.elder_id != request.elder_id or (expected is not None and current.version != expected):
                 raise AppError(409, 'VERSION_CONFLICT', 'Medication plan changed while provider was running')
+        active_id = next((a.action.action_id for a in plan.actions if a.action.requires_confirmation), plan.active_action_id)
+        private_state = {'draft': plan.draft.model_dump(mode='json') if plan.draft else None,
+                         'active_action_id': active_id}
+        if plan.draft:
+            if plan.draft.expires_at <= self.clock.now():
+                raise AppError(409, 'DRAFT_EXPIRED', 'Draft expired; please start a new request')
+            for asset_id in plan.draft.image_asset_ids:
+                self.services.media.get_asset(tx, actor, asset_id)
         row = TurnRow(elder_id=request.elder_id, actor_user_id=actor.user_id,
-                      conversation_id=request.conversation_id or new_id("conversation"),
-                      client_turn_id=request.client_turn_id, request_json=request.model_dump(mode="json"),
+                      conversation_id=snapshot.conversation_id or request.conversation_id or new_id("conversation"),
+                      client_turn_id=request.client_turn_id, request_json={**request.model_dump(mode="json"), '_workflow': private_state},
                       response_json={}, created_at=self.clock.now())
         tx.add(row)
         tx.flush()
         public_actions = []
         reply = plan.reply
         prefix = "【模拟】" if plan.chat_provider == "mock" else ""
+        if plan.supersede_action_id:
+            if snapshot.selected_action is None or plan.supersede_action_id != snapshot.selected_action.action.action_id:
+                raise AppError(404, 'NOT_FOUND', 'Correction does not target the selected action')
+            self.decide(tx, actor, plan.supersede_action_id, ActionDecision(decision='cancel'))
         if plan.decision_action_id:
-            if plan.decision_action_id not in snapshot.pending_action_ids:
+            selected_id = snapshot.selected_action.action.action_id if snapshot.selected_action else None
+            if plan.decision_action_id not in snapshot.pending_action_ids and plan.decision_action_id != selected_id:
                 raise AppError(404, "NOT_FOUND", "Action was not part of this snapshot")
-            result = self.decide(tx, actor, plan.decision_action_id, ActionDecision(decision="confirm"))
+            result = self.decide(tx, actor, plan.decision_action_id, ActionDecision(decision=plan.decision_kind))
             old_action = tx.get(ActionRow, plan.decision_action_id)
             public_actions.append(TypeAdapter(Action).validate_python({**old_action.payload_json['public'], "status": result.status}))
             reply = prefix + result.reply.text
@@ -146,6 +206,11 @@ class AgentService:
             if payload.get("elder_id") != request.elder_id:
                 raise AppError(403, "ELDER_ACCESS_DENIED", "Prepared action targets another elder")
             self._validate_payload(public.type, payload)
+            if public.expires_at <= self.clock.now():
+                raise AppError(409, 'ACTION_EXPIRED', 'Prepared action expired before it was saved')
+            if public.type == 'record_diet':
+                for asset_id in payload['checkin']['payload']['image_asset_ids']:
+                    self.services.media.get_asset(tx, actor, asset_id)
             action = ActionRow(id=public.action_id, turn_id=row.id, elder_id=request.elder_id,
                                type=public.type, status="pending", expires_at=public.expires_at,
                                payload_json={**payload, "public": TypeAdapter(Action).dump_python(public, mode="json", exclude_unset=True)})

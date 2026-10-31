@@ -161,14 +161,16 @@ def test_model_phase_has_no_lock_and_final_uow_rechecks_real_resources(real_api,
     assert count(api, AgentTurn) == (1 if change == 'independent-writer' else 0)
 
 
-def test_real_mode_non_diet_guidance_does_not_materialize_medication_or_call_mock(real_api):
+def test_real_medication_request_does_not_invent_a_plan_or_intake(real_api):
     api, captured = real_api
     from app.models.health import DailyTask
     result = turn(api, text='我吃药了')
     assert result.status_code == 201, result.text
     value = result.json()['data']
     assert not value['actions'] and value['providers']['chat'] == 'not_used'
-    assert captured.calls == [] and count(api, Checkin) == count(api, DailyTask) == 0
+    assert captured.calls == [] and count(api, Checkin) == 0
+    with api[0].state.sessions() as tx:
+        assert all(task.category != 'medication' for task in tx.scalars(select(DailyTask)).all())
 
 
 def test_plain_next_turn_confirmation_reuses_saved_action_without_model_call(real_api):

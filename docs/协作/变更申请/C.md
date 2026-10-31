@@ -1,4 +1,35 @@
-# C 当前变更状态：d8c2ad1 已合入，原三项集成阻塞已关闭
+# C 当前请求：真实对话已补齐，剩余公共 mock 接线由 A 收口
+
+2026-10-31。当前包含 `f2-demo-v4@582e304` 和 B 的 `ad4325a`。用户再次明确公共文件交A维护，同时要求能接真实实现的应改尽改。本节覆盖下方F1历史“无剩余公共缺口”的结论。
+
+## A：提案播报接现有真实 TTS
+
+准确位置：`backend/app/application/identity_flows.py::create_change` 仍调用 `prepare_proposal_notice(body, tts=ProposalFixtureTTS(), plan=plan)`。全局三模态real并未改变这条路径。C已补好 `app.providers.proposal_notice`：
+
+```python
+proposal_text(body, *, plan=None, is_mock=True) -> str
+prepare_proposal_notice(body, *, tts: TTSProvider, plan=None) -> tuple[str, SpokenNotice | None]
+```
+
+第二个入口从实际tts的is_mock/name确定全文标记，并核验Speech.is_mock一致。真实provider不会带【模拟】，mock仍精确匹配原全文fixture。已覆盖真实标记、原文字段完整性和错误来源拒绝；全文超过B单次200字上限仍保留完整文字、notice=None，不截断、不假称已播报。
+
+A的最小接线：在现有事务外准备位置，从 `state.agent_tts` 取真实provider；mock模式继续使用 `ProposalFixtureTTS()` 保留已验证的固定完整播报。准备前短读重新验child绑定、目标elder/资源/版本、mock/real对象和可用幂等结果，避免未授权或重放触发计费；准备后新写UoW重验这些条件，媒体登记与提案同次提交。不得把外部TTS放写事务。无完整音频保持pending_notice，不能启动60秒窗口。新增回归至少包括任意新patch值、真实provider、错误/超时/全文超限、跨老人、重放和完整播放后才计时。C未编辑该公共文件。
+
+## A/B：看板来源字段
+
+`backend/app/schemas/identity.py::Dashboard.provider_mode` 仍为 `Literal['mock']`，`services/report_service.py::dashboard` 仍写死mock。统计本身从真实SQLite记录/任务计算，不能用改标签代替业务接线；建议把数据来源语义统一为database或项目已约定的实际来源，同时改schema/service、公共测试、前端说明并重导出OpenAPI。该schema/他域service由A/B处理，C不越界编辑。
+
+## A/B 与前端：其余保留或待配合项
+
+- B最新真实ASR/TTS已正常合入，C本机env已改为chat/asr/tts=real；三个实例均real/is_mock=False，实际三模态TCP已验。本机key始终私有，同事从空key示例自行填入。默认无keymock和替身测试继续保留。
+- 社区自动匹配/历史demo_seed/预设关怀仍按实际演示来源标记，不冒充真实社区系统。短信仍是demo code，需要另有短信供应商才可真实发送；单个MiMo key不能实现短信接入。
+- 任意新关怀文字的动态语音仍由A/B接既有TTSProvider；子女录音/已验证预设可真实通知、播放与回执。
+- 绑定码等执行后才产生动态全文的回复，Agent可能返回完整文字与tts_unavailable。前端按既有AI02对最终reply.text补播，不能播规划阶段的占位句；若要在AGENT01内自动补播，需A先对齐幂等响应最终化约定，再由C补事务外TTS，不在已提交事实后假装回滚。
+- 真麦克风/Edge PCM WAV采集、HTTPS、手机实听与真实播放器回执尚待设备验收。C的真实探针使用明确生成的“确认。”WAV，不能替代麦克风证明。
+
+---
+
+# C 历史变更状态：d8c2ad1 已合入，原三项集成阻塞已关闭
 
 2026-10-31（Asia/Shanghai）。用户转来B `backend/health@d8c2ad1` 后，C已正常快进合入；本节覆盖下方历史未接线申请。
 

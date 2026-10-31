@@ -1,5 +1,6 @@
 """C orchestration: providers never run while a Session is held."""
 from dataclasses import replace
+import re
 import time
 from pydantic import TypeAdapter, ValidationError
 from app.core.auth import authenticate
@@ -7,6 +8,7 @@ from app.core.clock import local_date
 from app.core.errors import AppError, unimplemented
 from app.core.idempotency import StoredResult
 from app.providers.planning import ImageInput, request_digest
+from app.providers.dialogue import normalized, report_day
 from app.providers.real_understanding import MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES
 from app.routers.dependencies import check_access, check_resource, read_unit, write_unit
 from app.schemas.agent import Action, AgentTurn, ASRResult, TTSResult
@@ -135,16 +137,20 @@ def _proposal_id(services, tx, actor, elder_id, notification_id):
 
 def _needs_tasks(body, chat=None):
     if chat is not None and not _is_mock(chat):
-        return False  # F2 real understanding is diet-only; no medication preparation.
+        return bool(re.fullmatch(r'(?:我)?(?:已经|刚刚|刚才)?(?:吃了药|吃药了|服药了|服用了.+)', normalized(body.text)))
     return body.mock_fixture_id == 'medication_confirm' or (
         body.mock_fixture_id is None and (body.text or '').strip() in {'吃了药', '我吃药了'})
 
 
-def _snapshot(auth, tx, body, *, include_tasks=True):
+def _materializes(body, chat, now):
+    return _needs_tasks(body, chat) or (not _is_mock(chat) and report_day(body.text, now) is not None)
+
+
+def _snapshot(auth, tx, body, *, include_tasks=True, force_tasks=False):
     state = auth.request.app.state
     profile = state.services.profile.read(tx, auth.actor, body.elder_id)
-    tasks, slots = [], {}
-    if include_tasks and _needs_tasks(body, state.agent_chat):
+    tasks, slots, names = [], {}, {}
+    if include_tasks and (force_tasks or _needs_tasks(body, state.agent_chat)):
         tasks = state.services.tasks.today(tx, auth.actor, body.elder_id, local_date(state.clock.now())).items
         for task in tasks:
             if task.category != 'medication' or not task.plan_id:
@@ -156,10 +162,14 @@ def _snapshot(auth, tx, body, *, include_tasks=True):
                 # Derive from actual plan slots, never parse slot_key as slot_id.
                 if task.slot_key == f'{plan.plan_id}:{slot.slot_id}':
                     slots[task.task_id] = slot.slot_id
+                    names[task.task_id] = plan.name
     snapshot = state.agent.read_snapshot(tx, auth.actor, body, profile=profile,
                                          tasks=tasks, medication_slots=slots)
+    day = report_day(body.text, snapshot.now) if not _is_mock(state.agent_chat) else None
+    report_text = state.services.reports.daily(tx, auth.actor, body.elder_id, day).summary_text if day else None
     return replace(snapshot, proposal_id=_proposal_id(state.services, tx, auth.actor,
-                                                      body.elder_id, body.context.notification_id))
+                                                      body.elder_id, body.context.notification_id), report_text=report_text,
+                   medication_names=names)
 
 
 def turn(auth, body, key):
@@ -173,7 +183,7 @@ def turn(auth, body, key):
     content = None
     image_handles = []
     audio_only = bool(body.audio_asset_id and not body.text)
-    materializing = _needs_tasks(body, state.agent_chat) and not audio_only
+    materializing = _materializes(body, state.agent_chat, state.clock.now()) and not audio_only
     # TaskPort.today may create today's goals. Persist those stable IDs in a
     # separate SHORT transaction; never retain its write lock for a provider.
     # Targets are not intake facts: no Checkin is written before confirmation.
@@ -194,6 +204,13 @@ def turn(auth, body, key):
                 raise AppError(413, 'MEDIA_TOO_LARGE', 'Real understanding allows at most 10 MiB of images in total')
         if materializing:
             unit.commit()
+    if previous is None and not audio_only and snapshot.draft is not None and snapshot.draft.kind == 'medication' and not materializing:
+        # A follow-up may only name a drug/time. Preserve stable task IDs in a
+        # second short write UoW after discovering the private draft.
+        with write_unit(auth.request) as unit:
+            _context_access(auth, unit.session, body)
+            snapshot = _snapshot(auth, unit.session, body, force_tasks=True)
+            unit.commit()
     plan, speech, speech_provider = None, None, None
     if previous is None:
         planning_input, asr_provider = body, 'not_used'
@@ -202,10 +219,11 @@ def turn(auth, body, key):
             recognized = ASRResult.model_validate(recognized)
             planning_input = body.model_copy(update={'text': recognized.transcript})
             asr_provider = recognized.provider
-            materializing = _needs_tasks(planning_input, state.agent_chat)
+            med_draft = snapshot.draft is not None and snapshot.draft.kind == 'medication'
+            materializing = _materializes(planning_input, state.agent_chat, state.clock.now()) or med_draft
             with (write_unit(auth.request) if materializing else read_unit(auth.request)) as unit:
                 _context_access(auth, unit.session, body)
-                snapshot = _snapshot(auth, unit.session, planning_input)
+                snapshot = _snapshot(auth, unit.session, planning_input, force_tasks=med_draft)
                 if materializing:
                     unit.commit()
         if image_handles:
@@ -219,8 +237,10 @@ def turn(auth, body, key):
             TypeAdapter(AgentTurn.model_fields['scene'].annotation).validate_python(plan.scene)
             for action in plan.actions:
                 TypeAdapter(Action).validate_python(TypeAdapter(Action).dump_python(action.action, mode='json', exclude_unset=True))
-            if not _is_mock(state.agent_chat) and (plan.preference or any(a.action.type != 'record_diet' for a in plan.actions)):
-                raise ValueError('F2 real understanding may only prepare diet actions')
+            allowed = {'record_diet', 'record_exercise', 'record_medication', 'update_profile',
+                       'create_binding_code', 'query_report', 'decide_change', 'respond_notification'}
+            if not _is_mock(state.agent_chat) and any(a.action.type not in allowed for a in plan.actions):
+                raise ValueError('Real understanding prepared an unsupported action')
         except (ValidationError, TypeError, ValueError) as exc:
             raise AppError(502, 'PROVIDER_ERROR', 'Understanding output failed schema validation') from exc
         try:

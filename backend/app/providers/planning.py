@@ -9,7 +9,9 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, AwareDatetime
 
 from app.schemas.agent import AgentTurnWrite, Action, MemoryDocument
 from app.schemas.health import DailyTask
@@ -29,6 +31,24 @@ class ImageInput:
     content: bytes
 
 
+class ConversationDraft(BaseModel):
+    """C-private, persisted in an existing turn; never an executable action.
+
+    No model-authored IDs, dates, targets or permissions are accepted here.
+    Expiry and occurrence time are fixed by the server on first input.
+    """
+    model_config = ConfigDict(extra='forbid')
+    kind: Literal['diet', 'exercise', 'medication']
+    occurred_at: AwareDatetime
+    expires_at: AwareDatetime
+    meal_slot: Literal['breakfast', 'lunch', 'dinner'] | None = None
+    foods: list[str] = Field(default_factory=list, max_length=20)
+    food_groups: list[Literal['vegetable', 'protein', 'staple', 'fruit', 'dairy', 'fat', 'other']] = Field(default_factory=list)
+    image_asset_ids: list[str] = Field(default_factory=list, max_length=3)
+    activity: str | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+
+
 @dataclass(frozen=True)
 class Snapshot:
     elder_id: str
@@ -40,6 +60,14 @@ class Snapshot:
     pending_action_ids: tuple[str, ...] = ()
     proposal_id: str | None = None
     images: tuple[ImageInput, ...] = ()
+    conversation_id: str | None = None
+    conversation_revision: str | None = None
+    draft: ConversationDraft | None = None
+    selected_action: PlannedAction | None = None
+    active_action_id: str | None = None
+    report_text: str | None = None
+    medication_names: dict[str, str] = field(default_factory=dict)
+    dialogue_history: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,6 +88,10 @@ class Plan:
     transcript: str | None = None
     asr_provider: str = "not_used"
     chat_provider: str = "mock"
+    decision_kind: Literal['confirm', 'cancel'] = 'confirm'
+    supersede_action_id: str | None = None
+    draft: ConversationDraft | None = None
+    active_action_id: str | None = None
 
 
 class UnderstandingProvider(Protocol):

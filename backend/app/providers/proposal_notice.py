@@ -60,7 +60,7 @@ def _value(field: str, value) -> str:
     return _quoted(value) if value else "清空文字"
 
 
-def proposal_text(body: ChangeProposalWrite, *, plan: MedicationPlan | None = None) -> str:
+def proposal_text(body: ChangeProposalWrite, *, plan: MedicationPlan | None = None, is_mock: bool = True) -> str:
     """Narrate EVERY submitted field; no provider calls and no omitted nulls.
 
     Only replacement plan creation includes all defaults. Updates preserve the
@@ -80,7 +80,7 @@ def proposal_text(body: ChangeProposalWrite, *, plan: MedicationPlan | None = No
         introduction = (f'孩子申请{verb}用药计划，计划编号{_quoted(plan.plan_id)}，'
                         f'药品{_quoted(plan.name)}，原用量{_quoted(plan.dose_display)}。')
     patch = body.patch.model_dump(mode="json", exclude_unset=body.operation != "create")
-    parts = ["【模拟】" + introduction]
+    parts = [("【模拟】" if is_mock else "") + introduction]
     for key, value in patch.items():
         if key not in LABELS:
             raise AppError(501, "MODULE_NOT_IMPLEMENTED", f"No complete narration for field {key}")
@@ -99,7 +99,8 @@ def prepare_proposal_notice(body: ChangeProposalWrite, *, tts: TTSProvider,
     full text without audio, preserve pending_notice, and never arm the window.
     Validation/unexpected exceptions propagate; mismatched speech is a hard error.
     """
-    text = proposal_text(body, plan=plan)
+    is_mock = bool(getattr(tts, 'is_mock', getattr(tts, 'name', 'mock') == 'mock'))
+    text = proposal_text(body, plan=plan, is_mock=is_mock)
     try:
         speech = tts.synthesize(text)
     except AppError as exc:
@@ -107,6 +108,8 @@ def prepare_proposal_notice(body: ChangeProposalWrite, *, tts: TTSProvider,
                                            (502, "PROVIDER_ERROR"), (504, "PROVIDER_TIMEOUT")}:
             return text, None
         raise
+    if bool(speech.is_mock) != is_mock:
+        raise AppError(502, 'PROVIDER_ERROR', 'Proposal speech provenance differs from its provider')
     if speech.text != text or not speech.content or speech.duration_ms <= 0:
         raise AppError(502, "PROVIDER_ERROR", "Proposal speech does not match the complete text")
     return text, SpokenNotice(text, GeneratedAudio(speech.content, speech.mime_type, speech.duration_ms))
