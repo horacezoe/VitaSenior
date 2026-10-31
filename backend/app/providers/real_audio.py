@@ -1,8 +1,8 @@
-"""One opt-in MiMo TTS adapter; no database, media writes or fallback.
+"""Opt-in MiMo audio adapters; no database, media writes or fallback.
 
 The public TTSProvider method remains synchronous. A owns configuration and
 assembly; callers release their UoW before synthesis and register the returned
-Speech through MediaPort afterwards. ASR is deliberately deferred.
+Speech through MediaPort afterwards. ASR's production assembly belongs to A.
 """
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ import wave
 import httpx
 
 from app.core.errors import AppError
-from app.providers.mock_audio import Speech
+from app.providers.mock_audio import Speech, inspect_wav
+from app.schemas.agent import ASRResult
 
 
 class MiMoTTS:
@@ -226,3 +227,127 @@ class MiMoTTS:
             return duration_ms
         except (ValueError, wave.Error, EOFError, struct.error):
             raise self._error(502, "invalid_audio") from None
+
+
+class MiMoASR:
+    """One Chinese PCM WAV -> real transcription adapter, no fixture fallback.
+
+    This does not make Edge recording work by itself. The browser capture
+    format and A's factory/configuration must be integrated separately.
+    """
+
+    name = "real"
+    is_mock = False
+    MODEL = "mimo-v2.5-asr"
+    BASE_URL = "https://api.xiaomimimo.com/v1"
+    MAX_AUDIO_BYTES = 7 * 1024 * 1024  # Base64 stays below the supplier's 10 MB.
+    MAX_RESPONSE_BYTES = 64 * 1024
+
+    def __init__(self, *, api_key: str, base_url: str, model: str,
+                 timeout_seconds: float = 20.0, connect_timeout_seconds: float = 5.0,
+                 transport: httpx.AsyncBaseTransport | None = None):
+        if (not isinstance(api_key, str) or not api_key or not api_key.isascii()
+                or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in api_key)):
+            raise ValueError("MiMo ASR requires a non-empty ASCII API key without whitespace or controls")
+        if not isinstance(base_url, str) or base_url.rstrip("/") != self.BASE_URL:
+            raise ValueError("MiMo ASR requires the official HTTPS API root")
+        if model != self.MODEL:
+            raise ValueError("This ASR adapter supports mimo-v2.5-asr only")
+        if (not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 20
+                or not math.isfinite(connect_timeout_seconds)
+                or not 0 < connect_timeout_seconds <= min(5, timeout_seconds)):
+            raise ValueError("ASR requires a total deadline <=20s and connect timeout <=5s")
+        self._api_key, self.base_url, self.model = api_key, self.BASE_URL, model
+        self.timeout_seconds, self.connect_timeout_seconds = timeout_seconds, connect_timeout_seconds
+        self._transport = transport
+
+    def transcribe(self, audio: bytes, mime_type: str, fixture_id: str | None = None) -> ASRResult:
+        if fixture_id is not None:
+            raise AppError(422, "VALIDATION_ERROR", "Real ASR does not accept mock fixture IDs")
+        if not isinstance(audio, bytes) or not audio:
+            raise AppError(422, "VALIDATION_ERROR", "A non-empty recording is required")
+        if len(audio) > self.MAX_AUDIO_BYTES:
+            raise AppError(413, "MEDIA_TOO_LARGE", "ASR recording exceeds 7 MiB")
+        mime = (mime_type or "").split(";", 1)[0].strip().lower()
+        if (mime not in {"audio/wav", "audio/x-wav", "audio/wave"} or len(audio) < 44
+                or audio[:4] != b"RIFF" or audio[8:12] != b"WAVE"
+                or int.from_bytes(audio[4:8], "little") + 8 != len(audio)):
+            raise AppError(415, "ASR_FORMAT_UNSUPPORTED", "This ASR adapter requires complete PCM WAV; no transcoding is enabled")
+        if inspect_wav(audio) <= 0:
+            raise AppError(415, "ASR_FORMAT_UNSUPPORTED", "Recording has no complete millisecond of audio")
+        raw = asyncio.run(self._request(audio))
+        try:
+            result = json.loads(raw)
+        except (ValueError, UnicodeError, RecursionError):
+            raise self._error(502, "invalid_json") from None
+        if (not isinstance(result, dict) or result.get("error") is not None
+                or result.get("model", self.model) != self.model):
+            raise self._error(502, "invalid_response")
+        choices = result.get("choices")
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
+            raise self._error(502, "invalid_response")
+        choice = choices[0]
+        if choice.get("finish_reason") != "stop":
+            raise self._error(502, "incomplete_transcript")
+        message = choice.get("message")
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            raise self._error(502, "invalid_response")
+        text = message.get("content")
+        if not isinstance(text, str) or len(text) > 5000 or "\x00" in text:
+            raise self._error(502, "invalid_transcript")
+        if not text.strip():
+            raise AppError(422, "VALIDATION_ERROR", "No speech recognized; use text input or record again")
+        return ASRResult(transcript=text, language="zh-CN", provider=self.name, is_mock=False)
+
+    def _error(self, status: int, reason: str, *, upstream_status: int | None = None,
+               retryable: bool = False) -> AppError:
+        details = {"provider": self.name, "modality": "asr", "reason": reason}
+        if upstream_status is not None:
+            details["upstream_status"] = upstream_status
+        return AppError(status, "PROVIDER_TIMEOUT" if status == 504 else "PROVIDER_ERROR",
+                        "ASR unavailable; retain the recording and offer text input", details,
+                        retryable=retryable)
+
+    async def _request(self, audio: bytes) -> bytes:
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                async with httpx.AsyncClient(
+                    transport=self._transport, follow_redirects=False, trust_env=False,
+                    timeout=httpx.Timeout(self.timeout_seconds, connect=self.connect_timeout_seconds),
+                ) as client:
+                    async with client.stream(
+                        "POST", self.base_url + "/chat/completions",
+                        headers={"api-key": self._api_key, "Accept": "application/json", "Accept-Encoding": "identity"},
+                        json={"model": self.model, "messages": [{"role": "user", "content": [{
+                            "type": "input_audio", "input_audio": {"format": "wav",
+                                "data": "data:audio/wav;base64," + base64.b64encode(audio).decode("ascii")}}]}],
+                            "asr_options": {"language": "zh"}, "stream": False},
+                    ) as response:
+                        status = response.status_code
+                        if status != 200:
+                            raise self._error(504 if status in {408, 504} else 502, "upstream_error",
+                                upstream_status=status, retryable=status in {408, 429} or status >= 500)
+                        if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+                            raise self._error(502, "invalid_response_type")
+                        if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+                            raise self._error(502, "invalid_response_encoding")
+                        length = response.headers.get("content-length")
+                        expected = None
+                        if length is not None:
+                            if len(length) > 10 or not length.isascii() or not length.isdigit():
+                                raise self._error(502, "invalid_content_length")
+                            expected = int(length)
+                            if not 0 < expected <= self.MAX_RESPONSE_BYTES:
+                                raise self._error(502, "invalid_response_size")
+                        raw = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if len(raw) + len(chunk) > self.MAX_RESPONSE_BYTES:
+                                raise self._error(502, "invalid_response_size")
+                            raw.extend(chunk)
+                        if expected is not None and len(raw) != expected:
+                            raise self._error(502, "incomplete_response")
+                        return bytes(raw)
+        except (TimeoutError, httpx.TimeoutException):
+            raise self._error(504, "timeout", retryable=True) from None
+        except httpx.HTTPError:
+            raise self._error(502, "transport_error", retryable=True) from None

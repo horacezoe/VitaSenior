@@ -20,7 +20,7 @@ from app.core.errors import AppError
 from app.core.uow import UnitOfWork
 from app.main import create_app
 from app.providers.mock_audio import Speech, TTSProvider
-from app.providers.real_audio import MiMoTTS
+from app.providers.real_audio import MiMoTTS, MiMoASR
 from app.seed import framework_seed
 from app.contracts.context import Actor
 from app.schemas.enums import Role
@@ -538,10 +538,10 @@ def test_mock_restart_after_real_tts_needs_no_key_and_retains_session(configured
         assert response.status_code == 200 and response.json()["data"]["providers"]["tts"] == "mock"
 
 
-def load_probe():
+def load_probe(filename="probe_real_tts.py"):
     import importlib.util
     from pathlib import Path
-    spec = importlib.util.spec_from_file_location("audio_probe_for_test", Path(__file__).with_name("probe_real_tts.py"))
+    spec = importlib.util.spec_from_file_location("audio_probe_for_test", Path(__file__).with_name(filename))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -585,3 +585,196 @@ def test_standalone_probe_normal_factory_one_substitute_request_and_isolated_db(
     assert evidence["provider"] == "real" and evidence["listened"] is False
     assert evidence["text"] == TEXT and evidence["mime_type"] == "audio/wav"
     assert KEY not in manifests[0].read_text(encoding="utf-8")
+
+
+def asr_adapter(handler, **kwargs):
+    return MiMoASR(api_key=KEY, base_url=MiMoASR.BASE_URL, model=MiMoASR.MODEL,
+                   transport=httpx.MockTransport(handler), **kwargs)
+
+
+def asr_response(text):
+    return httpx.Response(200, json={"model": MiMoASR.MODEL, "choices": [{"finish_reason": "stop",
+                          "message": {"role": "assistant", "content": text}}]})
+
+
+def test_asr_new_recordings_use_supplier_output_not_fixed_transcript():
+    audio = pcm_wav(rate=16000)
+    changed = audio[:-2] + b"\x12\x34"
+    requests = []
+    outputs = ["今天午餐吃了青菜。", "这是一段新的录音内容。"]
+
+    def handler(request):
+        data = json.loads(request.content)
+        index = len(requests)
+        requests.append(request)
+        assert str(request.url) == MiMoASR.BASE_URL + "/chat/completions"
+        assert request.headers["api-key"] == KEY
+        assert data["model"] == "mimo-v2.5-asr" and data["stream"] is False
+        assert data["asr_options"] == {"language": "zh"}
+        assert data["messages"][0]["role"] == "user"
+        parts = data["messages"][0]["content"]
+        assert len(parts) == 1 and parts[0]["type"] == "input_audio"
+        assert parts[0]["input_audio"]["format"] == "wav"
+        prefix, encoded = parts[0]["input_audio"]["data"].split(",", 1)
+        assert prefix == "data:audio/wav;base64"
+        assert base64.b64decode(encoded, validate=True) == [audio, changed][index]
+        return asr_response(outputs[index])
+
+    provider = asr_adapter(handler)
+    for index, recording in enumerate([audio, changed]):
+        result = provider.transcribe(recording, "audio/wav")
+        assert result.transcript == outputs[index]
+        assert result.provider == "real" and result.is_mock is False and result.language == "zh-CN"
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("audio,mime,status", [
+    (b"", "audio/wav", 422), (b"not-wave", "audio/wav", 415),
+    (b"\x1a\x45\xdf\xa3webm", "audio/webm;codecs=opus", 415),
+    (pcm_wav(), "audio/webm", 415), (pcm_wav()[:-2], "audio/wav", 415),
+    (pcm_wav() + b"junk", "audio/wav", 415), (pcm_wav(width=1), "audio/wav", 415),
+    (pcm_wav(frames=0), "audio/wav", 415),
+], ids=["empty", "invalid", "native-webm", "mislabeled", "truncated", "trailing", "wrong-encoding", "no-frames"])
+def test_asr_rejects_unsupported_or_incomplete_audio_before_network(audio, mime, status):
+    requests = []
+    with pytest.raises(AppError) as caught:
+        asr_adapter(lambda request: requests.append(request)).transcribe(audio, mime)
+    assert caught.value.status == status and requests == []
+
+
+def test_asr_mock_fixture_and_size_duration_limits_never_call_supplier():
+    requests = []
+    provider = asr_adapter(lambda request: requests.append(request))
+    with pytest.raises(AppError) as caught:
+        provider.transcribe(pcm_wav(), "audio/wav", "known-mock-fixture")
+    assert caught.value.status == 422
+    with pytest.raises(AppError) as caught:
+        provider.transcribe(b"x" * (MiMoASR.MAX_AUDIO_BYTES + 1), "audio/wav")
+    assert caught.value.status == 413
+    with pytest.raises(AppError) as caught:
+        provider.transcribe(pcm_wav(rate=16000, frames=16000 * 61), "audio/wav")
+    assert caught.value.status == 413 and requests == []
+
+
+@pytest.mark.parametrize("status,expected,retryable", [
+    (400, 502, False), (401, 502, False), (403, 502, False), (429, 502, True),
+    (500, 502, True), (503, 502, True), (504, 504, True), (302, 502, False),
+])
+def test_asr_upstream_errors_no_leak_no_retry(status, expected, retryable):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, text=KEY, headers={"location": "https://untrusted.invalid"})
+
+    with pytest.raises(AppError) as caught:
+        asr_adapter(handler).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.status == expected and caught.value.retryable is retryable
+    assert caught.value.details["upstream_status"] == status
+    assert KEY not in str(caught.value) + str(caught.value.details) and len(calls) == 1
+
+
+@pytest.mark.parametrize("error,status", [(httpx.ReadTimeout, 504), (httpx.ConnectTimeout, 504),
+                                         (httpx.ConnectError, 502), (httpx.RemoteProtocolError, 502)])
+def test_asr_transport_failures_are_explicit(error, status):
+    def handler(request):
+        raise error(KEY, request=request)
+    with pytest.raises(AppError) as caught:
+        asr_adapter(handler).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.status == status and KEY not in str(caught.value)
+
+
+def test_asr_total_deadline_cancels_supplier_wait():
+    cancelled = []
+    async def handler(request):
+        try:
+            await asyncio.sleep(1)
+        finally:
+            cancelled.append(True)
+    with pytest.raises(AppError) as caught:
+        asr_adapter(handler, timeout_seconds=0.02, connect_timeout_seconds=0.01).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.status == 504 and cancelled == [True]
+
+
+@pytest.mark.parametrize("text,status", [(None, 502), ([], 502), ("", 422), (" \n", 422), ("a\x00b", 502)])
+def test_asr_empty_invalid_transcript_does_not_return_fixed_sample(text, status):
+    with pytest.raises(AppError) as caught:
+        asr_adapter(lambda request: asr_response(text)).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.status == status
+
+
+@pytest.mark.parametrize("reason", ["length", "content_filter", None])
+def test_asr_incomplete_transcript_fails(reason):
+    body = asr_response("可能被截断的文字").json()
+    body["choices"][0]["finish_reason"] = reason
+    with pytest.raises(AppError) as caught:
+        asr_adapter(lambda request: httpx.Response(200, json=body)).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.details["reason"] == "incomplete_transcript"
+
+
+@pytest.mark.parametrize("body", [None, {}, {"error": {"message": KEY}}, {"choices": []}])
+def test_asr_malformed_response_never_succeeds(body):
+    with pytest.raises(AppError) as caught:
+        asr_adapter(lambda request: httpx.Response(200, content=json.dumps(body),
+            headers={"content-type": "application/json"})).transcribe(pcm_wav(), "audio/wav")
+    assert caught.value.status == 502 and KEY not in str(caught.value)
+
+
+def test_asr_explicit_injection_into_existing_ai01_keeps_media_auth_and_releases_tx(configured_audio):
+    # A's ASR factory switch is still pending. Injection is explicit and test-only.
+    app, client, seed, tokens, _ = configured_audio
+    calls = []
+    def handler(request):
+        calls.append(request)
+        with UnitOfWork(app.state.sessions) as unit:
+            unit.session.connection().exec_driver_sql("SELECT 1")
+            unit.commit()
+        return asr_response("今天午餐吃了青菜、豆腐和米饭，请帮我记录。")
+    app.state.agent_asr = asr_adapter(handler)
+    uploaded = client.post("/api/v1/media", headers={**tokens["elder"], "Idempotency-Key": "asr-upload"},
+        data={"purpose": "agent_audio", "elder_id": seed["elder"]["elder_id"]},
+        files={"file": ("recording.wav", pcm_wav(), "audio/wav")})
+    assert uploaded.status_code == 201, uploaded.text
+    body = {"elder_id": seed["elder"]["elder_id"], "audio_asset_id": uploaded.json()["data"]["asset_id"]}
+    denied = client.post("/api/v1/ai/asr", headers=tokens["unbound_child"], json=body)
+    assert denied.status_code == 403 and calls == []
+    result = client.post("/api/v1/ai/asr", headers=tokens["elder"], json=body)
+    assert result.status_code == 200, result.text
+    assert result.json()["data"]["provider"] == "real" and result.json()["data"]["is_mock"] is False
+    assert len(calls) == 1
+
+
+def test_asr_probe_requires_live_opt_in_before_reading_any_file(monkeypatch):
+    monkeypatch.delenv("LIVE_ASR", raising=False)
+    with pytest.raises(SystemExit) as caught:
+        load_probe("probe_real_asr.py").run(["--env-file", "must-not-read.env", "--audio", "must-not-read.wav"])
+    assert caught.value.code == 2
+
+
+def test_asr_probe_one_substitute_request_no_false_edge_acceptance(monkeypatch, tmp_path):
+    import os
+    from unittest.mock import patch
+    probe = load_probe("probe_real_asr.py")
+    probe.BACKEND = tmp_path
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(pcm_wav())
+    local_env = tmp_path / ".env"
+    local_env.write_text(f"TTS_API_KEY={KEY}\nTTS_BASE_URL={MiMoASR.BASE_URL}\n", encoding="utf-8")
+    calls = []
+    original = MiMoASR.__init__
+    def handler(request):
+        calls.append(request)
+        return asr_response("这是 HTTP 替身返回的测试转写。")
+    def substituted_init(self, **kwargs):
+        original(self, **kwargs, transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(MiMoASR, "__init__", substituted_init)
+    with patch.dict(os.environ):
+        for field in ["ASR_API_KEY", "ASR_BASE_URL", "ASR_MODEL"]:
+            os.environ.pop(field, None)
+        probe.run(["--env-file", str(local_env), "--audio", str(audio_path), "--live"])
+    assert len(calls) == 1
+    manifest = next(tmp_path.glob("data/f2-audio-b/asr-evidence/*/evidence.json"))
+    result = json.loads(manifest.read_text(encoding="utf-8"))
+    assert result["transcript"] == "这是 HTTP 替身返回的测试转写。"
+    assert result["provider"] == "real" and result["is_mock"] is False
+    assert result["edge_capture_verified"] is False and KEY not in manifest.read_text(encoding="utf-8")
