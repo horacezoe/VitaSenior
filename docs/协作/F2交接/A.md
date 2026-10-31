@@ -73,8 +73,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 | 项 | 说明 |
 | --- | --- |
-| A 未复跑真实供应商调用 | 密钥只在 C 本地；A 用占位凭据验证了"启动 + `/runtime.providers` + 默认 mock 回归"。真实文字 3.8s / 图片 11.8s 来自 C 的隔离探测 |
-| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；A 的工厂已就绪并会在模块缺失时拒绝 `TTS_PROVIDER=real` |
+| A 侧真实供应商复跑 | ✅ 已复查（用用户提供的 MiMo key，未入库）：`CHAT_PROVIDER=real` → 生产工厂 → HTTP。纯文字 `AGENT01` **201 / 13.9s**，`providers.chat=real`，正确得出午餐+青菜/豆腐/米饭的待确认 `record_diet`；图片链路 **201 / 4.2s**（空白 1×1 图正确返回"无可记录"，没有伪造动作）；伪造 PNG 字节被供应商拒收时**如实 502 `PROVIDER_ERROR`**，不吞错。真实餐食照片的识别数据仍以 C 的探测为准（A 无照片素材） |
+| 真实 TTS（FAST-05） | 等 B 提供 `app/providers/real_tts.py::build(settings)`；工厂已就绪且缺模块时拒绝 `TTS_PROVIDER=real`。**同一 MiMo key 的模型列表含 `mimo-v2.5-tts` / `mimo-v2.5-asr`**，B 可直接对接，ASR 也可顺带解决 |
 | 手机 HTTPS / 真实设备播放 | 按用户安排延期；当前只验证到字节与票据，未验证真机 `<audio>` 实听 |
 | P1 接口 | 登出/解绑/删计划/撤销提案/记忆导出/推送均未挂载 |
 | 完整 AC01–AC14 | 未按总计划逐条演练 |
