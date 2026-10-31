@@ -1,9 +1,10 @@
 """HTTP substitutes by default. Test PCM is not evidence of synthesized speech.
 
 Only test_live_tts_and_media_round_trip can incur a charge, and requires an
-explicit VITASENIOR_LIVE_TTS=1 plus local SiliconFlow credentials/configuration.
+explicit VITASENIOR_LIVE_TTS=1 plus local MiMo credentials/configuration.
 """
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -24,15 +25,15 @@ from app.core.errors import AppError
 from app.core.uow import UnitOfWork
 from app.main import create_app
 from app.providers.mock_audio import Speech, TTSProvider
-from app.providers.real_audio import SiliconFlowTTS
+from app.providers.real_audio import MiMoTTS
 from app.seed import framework_seed
 from app.contracts.context import Actor
 from app.schemas.enums import Role
 
 
 TEXT = "您好，这是新生成的中文短回复。请先阅读页面上的完整文字，再播放语音。"
-MODEL = SiliconFlowTTS.MODEL
-VOICE = f"{MODEL}:anna"
+MODEL = MiMoTTS.MODEL
+VOICE = "冰糖"
 KEY = "test-only-not-a-real-key"
 
 
@@ -46,8 +47,14 @@ def pcm_wav(*, rate=24_000, channels=1, width=2, frames=2400, silent=False):
 
 
 def adapter(handler, **kwargs):
-    return SiliconFlowTTS(api_key=KEY, model=MODEL, voice=VOICE,
-                          transport=httpx.MockTransport(handler), **kwargs)
+    return MiMoTTS(api_key=KEY, model=MODEL, voice=VOICE,
+                   transport=httpx.MockTransport(handler), **kwargs)
+
+
+def audio_response(raw, *, headers=None):
+    return httpx.Response(200, json={"model": MODEL, "choices": [{"index": 0, "finish_reason": "stop",
+           "message": {"role": "assistant", "audio": {"data": base64.b64encode(raw).decode("ascii")}}}]},
+           headers=headers)
 
 
 def test_new_chinese_text_is_sent_whole_and_speech_metadata_is_real():
@@ -55,16 +62,16 @@ def test_new_chinese_text_is_sent_whole_and_speech_metadata_is_real():
 
     def handler(request):
         requests.append(request)
-        assert str(request.url) == SiliconFlowTTS.ENDPOINT
+        assert str(request.url) == MiMoTTS.ENDPOINT
         assert request.method == "POST"
-        assert request.headers["authorization"] == f"Bearer {KEY}"
-        assert request.headers["accept"] == "audio/wav"
+        assert request.headers["api-key"] == KEY
+        assert "authorization" not in request.headers
+        assert request.headers["accept"] == "application/json"
         payload = json.loads(request.content)
-        assert payload == {"model": MODEL, "voice": VOICE, "input": texts[len(requests) - 1],
-                           "response_format": "wav", "sample_rate": 24_000,
-                           "stream": False, "speed": 1.0}
+        assert payload == {"model": MODEL, "messages": [{"role": "assistant", "content": texts[len(requests) - 1]}],
+                           "audio": {"format": "wav", "voice": VOICE}, "stream": False}
         assert request.extensions["timeout"]["connect"] == 5
-        return httpx.Response(200, content=audio, headers={"content-type": "audio/wav"})
+        return audio_response(audio)
 
     provider: TTSProvider = adapter(handler)
     texts = ["  " + TEXT + "\n", "这是另一条刚刚写下的中文回复，不能使用固定样例替代。"]
@@ -74,7 +81,7 @@ def test_new_chinese_text_is_sent_whole_and_speech_metadata_is_real():
         assert speech.text == text and speech.content == audio
         assert speech.mime_type == "audio/wav" and speech.duration_ms == 100
         assert speech.is_mock is False
-    assert provider.name == "siliconflow" and provider.is_mock is False
+    assert provider.name == "mimo" and provider.is_mock is False
     assert len(requests) == 2
 
 
@@ -95,14 +102,14 @@ def test_text_at_demo_limit_is_sent_without_truncation_and_voice_override_is_rej
 
     def handler(request):
         calls.append(json.loads(request.content))
-        return httpx.Response(200, content=pcm_wav(), headers={"content-type": "audio/wav"})
+        return audio_response(pcm_wav())
 
     provider = adapter(handler)
     text = "中" * 200
     assert provider.synthesize(text).text == text
-    assert calls[0]["input"] == text
+    assert calls[0]["messages"] == [{"role": "assistant", "content": text}]
     with pytest.raises(AppError) as caught:
-        provider.synthesize(TEXT, f"{MODEL}:claire")
+        provider.synthesize(TEXT, "茉莉")
     assert caught.value.status == 422 and len(calls) == 1
 
 
@@ -127,7 +134,7 @@ def test_upstream_errors_are_safe_retry_metadata_without_automatic_retry(status,
     assert error.status == expected
     assert error.code == ("PROVIDER_TIMEOUT" if expected == 504 else "PROVIDER_ERROR")
     assert error.retryable is retryable
-    assert error.details == {"provider": "siliconflow", "reason": reason, "upstream_status": status}
+    assert error.details == {"provider": "mimo", "reason": reason, "upstream_status": status}
     assert KEY not in str(error) + str(error.details) and TEXT not in str(error) + str(error.details)
     assert len(calls) == 1
 
@@ -157,7 +164,8 @@ def test_absolute_deadline_cancels_a_slow_response_not_just_each_read():
 
         async def __aiter__(self):
             try:
-                for chunk in [pcm_wav()[:44], pcm_wav()[44:]]:
+                body = audio_response(pcm_wav()).content
+                for chunk in [body[:50], body[50:]]:
                     await asyncio.sleep(0.04)
                     yield chunk
             except asyncio.CancelledError:
@@ -168,7 +176,7 @@ def test_absolute_deadline_cancels_a_slow_response_not_just_each_read():
             self.closed = True
 
     stream = SlowStream()
-    provider = adapter(lambda request: httpx.Response(200, stream=stream, headers={"content-type": "audio/wav"}),
+    provider = adapter(lambda request: httpx.Response(200, stream=stream, headers={"content-type": "application/json"}),
                        timeout_seconds=0.06, connect_timeout_seconds=0.02)
     with pytest.raises(AppError) as caught:
         provider.synthesize(TEXT)
@@ -189,27 +197,94 @@ def test_absolute_deadline_also_cancels_before_response_headers():
     assert caught.value.status == 504 and cancelled == [True]
 
 
-@pytest.mark.parametrize("raw,mime", [
-    (b"", "audio/wav"), (b"not audio", "audio/wav"),
-    (b'{"error":"failed"}', "application/json"), (b"<html>error</html>", "text/html"),
-    (pcm_wav(), "audio/mpeg"), (pcm_wav(), ""),
-    (pcm_wav()[:-2], "audio/wav"), (pcm_wav() + b"garbage", "audio/wav"),
-    (pcm_wav(frames=0), "audio/wav"), (pcm_wav(silent=True), "audio/wav"),
-    (pcm_wav(rate=16_000), "audio/wav"), (pcm_wav(width=1), "audio/wav"),
-    (pcm_wav(channels=3), "audio/wav"),
-], ids=["empty", "plain-bytes", "json", "html", "wrong-mime", "missing-mime", "truncated",
+@pytest.mark.parametrize("raw", [
+    b"", b"not audio", b'{"error":"failed"}', b"<html>error</html>",
+    pcm_wav()[:-2], pcm_wav() + b"garbage", pcm_wav(frames=0), pcm_wav(silent=True),
+    pcm_wav(rate=16_000), pcm_wav(width=1), pcm_wav(channels=3),
+], ids=["empty", "plain-bytes", "json", "html", "truncated",
         "trailing-junk", "zero-frames", "silent", "wrong-rate", "wrong-width", "three-channels"])
-def test_empty_mislabeled_truncated_and_invalid_audio_is_never_returned(raw, mime):
+def test_empty_truncated_and_invalid_audio_is_never_returned(raw):
     with pytest.raises(AppError) as caught:
-        adapter(lambda request: httpx.Response(200, content=raw, headers={"content-type": mime})).synthesize(TEXT)
+        adapter(lambda request: audio_response(raw)).synthesize(TEXT)
     assert caught.value.status == 502 and caught.value.code == "PROVIDER_ERROR"
 
 
-@pytest.mark.parametrize("mime", ["audio/wav; charset=binary", "audio/x-wav", "audio/wave", "application/octet-stream"])
-def test_actual_wav_is_validated_before_mime_is_normalized(mime):
+@pytest.mark.parametrize("mime", ["application/json", "application/json; charset=utf-8"])
+def test_json_audio_is_decoded_and_wav_mime_is_based_on_bytes(mime):
     audio = pcm_wav(channels=2)
-    result = adapter(lambda request: httpx.Response(200, content=audio, headers={"content-type": mime})).synthesize(TEXT)
+    result = adapter(lambda request: audio_response(audio, headers={"content-type": mime})).synthesize(TEXT)
     assert result.content == audio and result.mime_type == "audio/wav" and result.duration_ms == 100
+
+
+@pytest.mark.parametrize("mime", ["", "text/html", "audio/wav", "application/octet-stream", "text/event-stream"])
+def test_non_json_success_response_cannot_be_mistaken_for_mimo_audio(mime):
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: audio_response(pcm_wav(), headers={"content-type": mime})).synthesize(TEXT)
+    assert caught.value.status == 502 and caught.value.details["reason"] == "invalid_response_type"
+
+
+@pytest.mark.parametrize("body", [b"", b'{"choices":', b"\xff\xfe", b"<html>failure</html>"])
+def test_invalid_json_is_a_safe_provider_failure(body):
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, content=body,
+                headers={"content-type": "application/json"})).synthesize(TEXT)
+    assert caught.value.status == 502 and caught.value.details["reason"] == "invalid_json"
+
+
+@pytest.mark.parametrize("body", [None, [], "wrong-shape", {}, {"error": {"message": KEY}},
+    {"choices": []}, {"choices": {}}, {"choices": [None]}, {"choices": [{}, {}]}])
+def test_json_error_or_missing_single_choice_never_returns_speech(body):
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, content=json.dumps(body),
+                headers={"content-type": "application/json"})).synthesize(TEXT)
+    assert caught.value.status == 502 and caught.value.details["reason"] == "invalid_response"
+    assert KEY not in str(caught.value) + str(caught.value.details)
+
+
+@pytest.mark.parametrize("reason", ["length", "content_filter", "repetition_truncation", "tool_calls", None, "unknown"])
+def test_valid_wav_with_unfinished_or_truncated_generation_is_rejected(reason):
+    body = audio_response(pcm_wav()).json()
+    body["choices"][0]["finish_reason"] = reason
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT)
+    assert caught.value.details["reason"] == "incomplete_generation"
+
+
+@pytest.mark.parametrize("message", [None, [], {"role": "user"}, {"role": "assistant"},
+                                      {"role": "assistant", "audio": "not-an-object"}])
+def test_missing_or_invalid_audio_message_fails(message):
+    body = audio_response(pcm_wav()).json()
+    body["choices"][0]["message"] = message
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT)
+    assert caught.value.status == 502
+
+
+@pytest.mark.parametrize("encoded", [None, 123, "", "not valid base64!", "中文", "YQ", "data:audio/wav;base64,YQ=="])
+def test_missing_or_invalid_base64_fails(encoded):
+    body = audio_response(pcm_wav()).json()
+    body["choices"][0]["message"]["audio"]["data"] = encoded
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT)
+    assert caught.value.status == 502
+
+
+@pytest.mark.parametrize("change", ["model", "format", "transcript"])
+def test_wrong_model_format_or_advertised_transcript_is_rejected(change):
+    body = audio_response(pcm_wav()).json()
+    if change == "model":
+        body["model"] = "mimo-v2.6-flash"
+    else:
+        body["choices"][0]["message"]["audio"][change] = "mp3" if change == "format" else "不同的文字"
+    with pytest.raises(AppError) as caught:
+        adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT)
+    assert caught.value.status == 502
+
+
+def test_optional_audio_format_and_exact_transcript_are_accepted():
+    body = audio_response(pcm_wav()).json()
+    body["choices"][0]["message"]["audio"].update(format="wav", transcript=TEXT)
+    assert adapter(lambda request: httpx.Response(200, json=body)).synthesize(TEXT).text == TEXT
 
 
 @pytest.mark.parametrize("change", ["riff_size", "data_size", "byte_rate", "block_align", "partial_frame", "long"])
@@ -226,15 +301,14 @@ def test_structurally_inconsistent_wav_and_excess_duration_fail(change):
     elif change == "partial_frame":
         struct.pack_into("<I", raw, 40, len(raw) - 45)
     with pytest.raises(AppError) as caught:
-        adapter(lambda request: httpx.Response(200, content=bytes(raw), headers={"content-type": "audio/wav"})).synthesize(TEXT)
+        adapter(lambda request: audio_response(bytes(raw))).synthesize(TEXT)
     assert caught.value.status == 502 and caught.value.details["reason"] == "invalid_audio"
 
 
-@pytest.mark.parametrize("length", ["-1", "invalid", "0", str(15 * 1024 * 1024 + 1), "100"])
+@pytest.mark.parametrize("length", ["-1", "invalid", "0", str(MiMoTTS.MAX_RESPONSE_BYTES + 1), "100"])
 def test_incorrect_content_length_is_rejected(length):
     with pytest.raises(AppError) as caught:
-        adapter(lambda request: httpx.Response(200, content=pcm_wav(),
-                headers={"content-type": "audio/wav", "content-length": length})).synthesize(TEXT)
+        adapter(lambda request: audio_response(pcm_wav(), headers={"content-length": length})).synthesize(TEXT)
     assert caught.value.status == 502
 
 
@@ -244,7 +318,7 @@ def test_unannounced_oversize_body_is_stopped_and_stream_closed():
         chunks_sent = 0
 
         async def __aiter__(self):
-            for _ in range(20):
+            for _ in range(24):
                 self.chunks_sent += 1
                 yield b"x" * 1024 * 1024
 
@@ -253,28 +327,29 @@ def test_unannounced_oversize_body_is_stopped_and_stream_closed():
 
     stream = LargeStream()
     with pytest.raises(AppError) as caught:
-        adapter(lambda request: httpx.Response(200, stream=stream, headers={"content-type": "audio/wav"})).synthesize(TEXT)
-    assert caught.value.details["reason"] == "invalid_audio_size"
-    assert stream.closed and stream.chunks_sent == 16
+        adapter(lambda request: httpx.Response(200, stream=stream, headers={"content-type": "application/json"})).synthesize(TEXT)
+    assert caught.value.details["reason"] == "invalid_response_size"
+    assert stream.closed and stream.chunks_sent == 21
 
 
 def test_encoded_body_is_rejected_before_decompression():
     with pytest.raises(AppError) as caught:
-        adapter(lambda request: httpx.Response(200, content=b"bad gzip",
-                headers={"content-type": "audio/wav", "content-encoding": "gzip"})).synthesize(TEXT)
-    assert caught.value.status == 502
+        adapter(lambda request: httpx.Response(200, stream=httpx.ByteStream(b"bad gzip"),
+                headers={"content-type": "application/json", "content-encoding": "gzip"})).synthesize(TEXT)
+    assert caught.value.status == 502 and caught.value.details["reason"] == "invalid_audio_encoding"
 
 
 @pytest.mark.parametrize("overrides", [
-    {"api_key": ""}, {"api_key": " \n"}, {"api_key": "key\nheader"},
-    {"model": ""}, {"model": "unknown"}, {"voice": ""}, {"voice": "anna"},
+    {"api_key": ""}, {"api_key": " \n"}, {"api_key": "key\nheader"}, {"api_key": "密钥"},
+    {"model": ""}, {"model": "unknown"}, {"model": "mimo-v2-tts"}, {"model": "mimo-v2.5-tts-voiceclone"},
+    {"voice": ""}, {"voice": "unknown"},
     {"timeout_seconds": 0}, {"timeout_seconds": 21}, {"timeout_seconds": float("inf")},
     {"connect_timeout_seconds": 6}, {"connect_timeout_seconds": float("nan")},
 ])
 def test_missing_or_unsupported_configuration_fails_without_network(overrides):
     config = {"api_key": KEY, "model": MODEL, "voice": VOICE, **overrides}
     with pytest.raises(ValueError):
-        SiliconFlowTTS(**config)
+        MiMoTTS(**config)
 
 
 def assert_media_round_trip(speech, tmp_path, *, provider_handler=None):
@@ -320,20 +395,20 @@ def assert_media_round_trip(speech, tmp_path, *, provider_handler=None):
 def test_speech_registers_through_existing_media_port_and_ticket_returns_all_bytes(tmp_path):
     audio = pcm_wav()
     speech = assert_media_round_trip(None, tmp_path, provider_handler=lambda request:
-             httpx.Response(200, content=audio, headers={"content-type": "audio/wav"}))
+             audio_response(audio))
     assert speech.content == audio and speech.is_mock is False
 
 
 @pytest.mark.skipif(os.getenv("VITASENIOR_LIVE_TTS") != "1", reason="Paid TTS is opt-in: VITASENIOR_LIVE_TTS=1")
 def test_live_tts_and_media_round_trip(tmp_path):
-    required = ["SILICONFLOW_API_KEY", "SILICONFLOW_TTS_MODEL", "SILICONFLOW_TTS_VOICE"]
+    required = ["MIMO_API_KEY", "MIMO_TTS_MODEL", "MIMO_TTS_VOICE"]
     if any(not os.getenv(name) for name in required):
         pytest.skip("Live TTS not run: local key/model/voice missing")
     text = os.getenv("VITASENIOR_LIVE_TTS_TEXT") or (
         "您好，这是银龄健康助手的新语音测试。请先查看页面上的完整文字，再听这段语音。测试时间："
         + datetime.now(timezone.utc).strftime("%Y年%m月%d日%H时%M分%S秒") + "。")
-    provider = SiliconFlowTTS(api_key=os.environ[required[0]], model=os.environ[required[1]],
-                             voice=os.environ[required[2]])
+    provider = MiMoTTS(api_key=os.environ[required[0]], model=os.environ[required[1]],
+                      voice=os.environ[required[2]])
     started = time.monotonic()
     speech = provider.synthesize(text)  # Exactly one paid request, no automatic retry.
     elapsed = time.monotonic() - started
