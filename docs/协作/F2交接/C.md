@@ -2,7 +2,18 @@
 
 2026-10-31（Asia/Hong_Kong）。从指定 `363f6376a63d696ba36b1bc7fc426e8b159dc196` 开始，分支 `backend/f2-understanding`。独立 worktree：`C:/Users/horac/Documents/ChatGPT/hackthon Su2026/VitaSenior-f2-understanding`；F1 的 D 盘工作区/数据未改。开工13:56，主链目标16:56，功能截止17:56。
 
-状态：**C_F2_CONFIGURED_NETWORK_VERIFIED / READY_FOR_A_FINAL_INTEGRATION**。已合入A的真实chat接线，并以正常 `app.main:app`、A工厂、进程环境变量启动独立Uvicorn，完成真实文字/照片、Runtime、重启持久性与显式无key mock回退。已验证代码提交：`a7eadaf1540429761d5c6d47e6fc09880e8ca719`。本机 `backend/.env` 被Git忽略、绝不上传；公共 `.env.mimo.example` 的CHAT_API_KEY保持为空，同事自行复制填写。总体F2汇总/发布标签仍由A完成。
+状态：**C_F2_V2_INTEGRATED_VERIFIED / READY_FOR_FRONTEND_INTEGRATION**。A已合入C的 `a7eadaf`、`96177dc`，发布统一标签 **`f2-demo-v2` → `24debddce9f5f2a88ee68f56f6245f7bba5b4c95`**；C分支已正常快进同步。此前正常工厂的真实文字/照片、Runtime、重启持久性与无key mock回退证据继续有效，理解实现/flow/工厂在此次更新中未改变。本机env始终忽略、不上传；公共示例key为空。C冻结新功能，转入前端联调阻断修复。
+
+## 统一基线跟进（f2-demo-v2）
+
+在A统一提交上独立执行：全量 **366 passed / 42 deselected / 无失败或xfail（73.33s）**；严格三轮 **39/0/0**；`demo_walkthrough` 为 **WALKTHROUGH_OK**；默认mock网络 **C_NETWORK_SMOKE_OK**；OpenAPI/架构/依赖检查均通过。唯一warning仍为既有Starlette/httpx弃用提示。
+
+```text
+python -m pytest tests -q --tb=short -rx --maxfail=1 --basetemp=.pytest_cache/c-f2-v2-all
+python -m app.tools.demo_walkthrough
+```
+
+其余命令同下节。本轮未重复供应商计费调用：真实MiMo正常网络证据见下节，相关实现与工厂未变。新增 `run-demo.ps1` 已审阅；A交接有其实际启动/真实请求记录，C本轮未运行该启动器（C工作树无本地backend/.venv，复验使用D盘既有venv）。在此工作树使用启动器前，按README准备本地.venv；不修改脚本或运行数据库来绕过环境条件。
 
 ## 已交付与入口
 
@@ -69,4 +80,4 @@ python tests/agent/smoke_mimo_network.py --env-file .env --live --image <演示�
 
 协议参考官方[图片输入](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)和[JSON输出](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/text-generation/structured-output)。本机账号的文字/图片已实测通过；同事账号仍需自行验证权限，不把文档或替身测试视为其账号已可用。
 
-仍未验收：真实音频、手机实听/HTTPS、前端设备演练及完整产品AC01–AC14。当前真实自然语言只保证饮食；其他原业务API保持可用。图片需明确“今天午餐”等餐次，不从菜品猜餐别。请A合入本分支后汇总发布；A的前端接入资料第118行仍写“所有AI都是mock”，自身交接开头也保留“TTS-only”旧段，应由A更新为chat可real、ASR/TTS本轮仍mock。公共实现接线缺口已关闭，本批不移动F1标签或自行发布总体F2标签。
+仍未验收：真实音频、手机实听/HTTPS、前端设备演练及完整产品AC01–AC14。当前真实自然语言只保证饮食；其他原业务API保持可用。图片需明确“今天午餐”等餐次，不从菜品猜餐别。A已完成代码整合，无需等待C新增功能。A的前端接入资料仍有“所有AI都是mock”，自身交接保留“TTS-only”和“C照片仅隔离探测”旧段，应由A统一成chat可real且C正常网络照片已验、ASR/TTS仍mock的事实；这些是文档清理项，不是当前代码阻断。本次只补C核验记录，沿用A的f2-demo-v2，不移动/重建任何标签。
