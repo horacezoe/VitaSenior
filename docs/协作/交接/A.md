@@ -384,6 +384,29 @@ trusted source parameter`）。B 的实现到位后：
 | 联调（NOTI03 关闭，B 自己的开关） | 32 ok / 4 pending | 33 ok / 3 pending |
 | 联调（NOTI03 临时打开） | 37 ok / 1 pending（AGENT02） | 38 ok / 0 pending |
 
+### 11.8 全绿里程碑：45/45 P0 已实现（`f1-integrated-v1`）
+
+B 在 `c1fe1d6` 里实现了可信来源（`CheckinService.create_or_update(..., source=...)` 落库）、
+在 `e78e604` 里以"完整内容语音"为前提打开了 `NOTI03`；C 在 `e24604b` 对齐验收。合并后：
+
+| 项 | 实际结果 |
+| --- | --- |
+| `python -m pytest tests -q` | **298 passed, 42 deselected, 0 failed, 0 xfailed** |
+| `python -m app.tools.integration_smoke` | **39 ok / 0 pending / 0 failed** |
+| 同上 `--strict` | **退出码 0** |
+| `GET /runtime` capabilities | **45/45 个 P0 为 true**，仅 `web_push`（P1）为 false |
+| providers | `chat/asr/tts` 均为 `mock` |
+| OpenAPI / 架构 | `4b7ade26…` / `Architecture OK` |
+
+发布动作（由 A 执行，均为快进或新增，不改写历史）：
+
+- `backend/platform` 快进到本提交（此前停在 A2 的 `72d7610`）。
+- 打一次性集成标签 `f1-integrated-v1`，指向本提交；**不移动、不重打**。
+- `integration/f1` 与两名开发者的分支都包含同一提交，后续如需修 P1 从该标签拉分支。
+
+仍未做（不属于 P0 闭环）：P1 的 `AUTH03/BIND05/PLAN04/CHANGE05/MEM04/PUSH01–03`、
+真实模型/ASR/TTS、手机 HTTPS 与真实 `<audio>` 播放、前端界面、AC01–AC14 的三人端到端演练。
+
 ### 11.3 C 分支（`backend/agent`，7d8bfea）的合并结论
 
 - C 只改了自己白名单内的文件，**没有碰任何共享文件**（contracts/schemas/models/core/main/
