@@ -96,7 +96,9 @@ class RealUnderstanding:
     not a media URL. `transport` is only for explicit HTTP substitute tests.
     Synchronous Protocol entry runs a cancellable async HTTP request in the sync
     FastAPI worker thread, enforcing a true total deadline instead of only idle
-    socket timeouts. No retries or fallback provider.
+    socket timeouts. MiMo's official endpoint uses non-thinking mode for this
+    small extraction task; other compatible endpoints keep their own defaults.
+    No retries or fallback provider.
     """
     name = 'real'
     is_mock = False
@@ -113,6 +115,7 @@ class RealUnderstanding:
             raise ValueError('Understanding total timeout must be within 0..20 seconds')
         self._api_key, self.base_url, self.model = api_key, base_url.rstrip('/'), model
         self.timeout_seconds, self._transport = timeout_seconds, transport
+        self._mimo_api = parsed.hostname == 'api.xiaomimimo.com'
 
     async def _request(self, payload):
         try:
@@ -144,6 +147,10 @@ class RealUnderstanding:
         payload = {'model': self.model, 'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
                                                   {'role': 'user', 'content': message}],
                    'stream': False, 'response_format': {'type': 'json_object'}, 'max_completion_tokens': 1024}
+        if self._mimo_api:
+            # MiMo enables reasoning by default. Diet candidates need a short
+            # structured answer, so skip reasoning tokens and their latency.
+            payload['thinking'] = {'type': 'disabled'}
         raw = asyncio.run(self._request(payload))
         try:
             envelope = json.loads(raw, object_pairs_hook=_unique_object)
