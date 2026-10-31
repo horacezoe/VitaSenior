@@ -1,4 +1,63 @@
-# C 当前交接：51dc555 已合入，mock 联调复验通过
+# C 当前交接：完整提案内容、SYSTEM 授权与可信来源适配
+
+日期：2026-10-31（Asia/Shanghai）。状态：**C_IMPLEMENTED / INTEGRATION_NOT_READY**。本节覆盖后面的历史就绪结论；三个 strict xfail 和网络阻塞均未计为通过。
+
+代码提交：`73e8f200bb04c36dc1b59088ebd7c4415fc08259`，分支 `backend/agent`。正常快进合入 A/B 的 `integration/f1@0894154494f3363435fed9d31b146b22dadbd8c8`，含 `backend/health@ce472da`。没有修改 A/B 实现或公共文件。B 提供的路径实际为 `docs/协作/交接/B.md`，不是“交接B.md”。
+
+## 本批 C 已完成
+
+- `providers/proposal_notice.py` 提供完整提案文字与真实匹配语音准备器，覆盖档案、提醒设置、计划新增/修改/停用。逐字段读出提交的实际值、清除值、替换列表、时间、剂量与原因；创建包含默认字段。计划修改/停用必须有 ID/版本匹配的真实 MedicationPlan，不猜目标药物。
+- `fixtures/agent/proposal_cases.json`、`proposal_manifest.json`、五个 `proposal_*_full.wav` 和生成脚本。离线 Huihui 中文语音，16kHz/16bit/mono PCM；文本和 SHA-256 一一对应。未知实际值不借用其他音频，返回完整文字与无音频。运行服务器无需 Windows/SAPI/供应商密钥。原 ASR 与五段普通语音清单没有扩张。
+- `AgentService` 按冻结 CheckinPort 固定传 `source="agent_confirmed"`。旧 B 签名在执行前明确 501；不回退成 user，不直接改 B 表。若适配器接参却丢弃来源，502 并回滚全部写入/动作/幂等成功结果。业务内部 TypeError 不被吞掉或重试。
+- `MemoryService` 复用共享 AccessPort 与 A 已发布的 SYSTEM 主体。系统仅可读取上下文/使来源失效，不能代替老人新建明确偏好、修正/删除记忆或确认 Agent 动作；本人、已绑定子女和陌生老人权限仍按中央检查。
+- 新增 `test_proposal_notice.py`、`test_system_and_source.py`，扩展真实默认装配验收。真实 A/B ports 已验证完整语音字节登记、未播放无窗口、完整播放后才有60秒、SYSTEM 超时应用档案/设置、无音频仍 pending_notice、显式本人接受可用，播放不生成 Checkin。客户端自报 source 被422拒绝，直接用户打卡仍为 user。
+
+## 实际验收（backend 目录，.venv / Python3.13.9）
+
+所有 pytest 使用 tmp_path SQLite/FakeClock；网络脚本使用独立临时 DATA_DIR/随机端口并退出，没有触碰运行数据库。
+
+```text
+python -m pytest tests/agent -q --tb=short -rx
+93 passed, 3 xfailed, 1 warning in 13.58s
+
+python -m pytest tests -q --tb=short -rx
+289 passed, 42 deselected, 3 xfailed, 1 warning in 55.04s
+
+python -m app.tools.export_contract --check
+OpenAPI matches 4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c
+
+python -m app.tools.check_architecture
+Architecture OK: no cross-domain implementation imports
+
+python -m pip check
+No broken requirements found.
+
+python -m app.tools.integration_smoke --strict
+32 ok, 4 pending, 0 failed; exit 1（未过严格门槛）
+
+python tests/agent/smoke_network.py
+exit 1：确认动作返回501，B未实现冻结source参数，期望200的验收未通过。
+```
+
+OpenAPI 路径 `backend/contracts/openapi.json`，上述 SHA-256 没有变化。42 deselected 为既有A0历史分类，唯一warning为既有Starlette/httpx弃用提示。真实设备/手机HTTPS/真实供应商未运行；NOTI03没有开启；没有把隔离ports测试等同默认HTTP完成。
+
+## 当前三项 strict xfail 与接手顺序
+
+这三项均由真实路径复现，使用 strict xfail 保留原成功/完整内容断言；修复后 XPASS 会失败，须删除对应标记并重跑。
+
+1. `test_default_change_http_notification_reads_actual_patch_values`：A `0894154` 虽删除提示音，仍仅按类型选录音，内容是“请听取本次修改”，没有实际 medical_notes 等值。默认HTTP回归要求通知文字包含实际值，当前失败。C提供的完整播报准备器尚待A接入，不能宣布该项已修好。
+2. `test_actual_b_confirmation_writes_once_and_report_uses_same_record`：B CheckinService 真实签名尚无 source，C运动确认明确501，不允许错标user。
+3. `test_medication_new_day_task_ids_remain_valid_after_planning[none]`：同一B缺口阻止真实服药确认；任务ID持久和版本复核仍通过。
+
+A 接手：按完整 body/真实目标快照在事务外调用 C 准备器；ChangeService 在写事务内重验目标、版本和 notice.text，存完整文字；无匹配语音时 audio=null、保持 pending_notice。具体候选接线与签名见 `变更申请/C.md` 首节。不要继续使用按类型的通用录音启动窗口。
+
+B 接手：实现已冻结的关键字 source，校验仅内部 user/agent_confirmed，创建/同餐替换时真实保存来源并保留旧修订来源；HTTP不新增source入参。C已固定传agent_confirmed并核对返回来源。
+
+A/B 合入本分支并修复这两处以后，移除三个 strict xfail、重跑本节所有命令；由 B 验收后开启其 NOTI03，再跑零PENDING严格三轮和真实网络烟测。当前4 PENDING为1项Agent确认来源+3项NOTI03回执。全部历史标签保持原指向，本批不移动或重建基线。
+
+---
+
+# C 历史交接：51dc555 已合入，mock 联调复验通过
 
 日期：2026-10-31（Asia/Shanghai）。状态：**C2_MOCK_INTEGRATION_VERIFIED；整体 P0 尚未全部完成**。
 
