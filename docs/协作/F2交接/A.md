@@ -56,10 +56,14 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - `build_agent_providers` 用 C 的 `app.providers.real_understanding.RealUnderstanding`；
   `providers(settings)` 按实际实例报告，实测 `{'chat': 'real', 'asr': 'mock', 'tts': 'mock'}`。
 - 默认仍全 mock、无需任何密钥；`ASR_PROVIDER` 仍强制 mock（本轮延期）。
-- **应用不会自动读取 `.env`**：变量要在 shell/进程环境里设置；C 给了空密钥示例
-  `backend/.env.mimo.example`（复制到本地 `.env` 只作备忘，不会被自动加载）。
-- A 用占位凭据验证了"启动 + Runtime 报告 + 默认 mock 回归"，**没有用真实 key 重跑供应商调用**；
-  真实文字/图片链路与 3.8s/11.8s 数据来自 C 的隔离探测（未上传密钥）。
+- **应用不会自动读取 `.env`**：这是刻意的（本地密钥不能污染 pytest 的确定性）。`backend/.env`
+  是 gitignore 的本机密钥文件，`backend/run-demo.ps1` 会把它导出成进程环境变量再启动 uvicorn；
+  也可以直接在 shell 里设变量。C 另给了空密钥示例 `backend/.env.mimo.example`。
+- **真实 uvicorn 实测**（`run-demo.ps1` + `.env`，端口 8011）：`/health` ok、scheduler running、
+  `/runtime.providers = {chat: real, asr: mock, tts: mock}`、45 项能力全 true；真实 HTTP
+  `AGENT01` **201 / 9.6s**，正确得出午餐+青菜/豆腐/米饭的待确认 `record_diet`。
+- A 用占位凭据验证过"启动 + Runtime 报告 + 默认 mock 回归"，并用真实 key 复跑了文字与图片链路；
+  **密钥只存在于本机 `backend/.env`（gitignore），未进入任何提交或标签**。
 
 ## 3. 合并与协作约定
 
