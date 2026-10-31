@@ -52,6 +52,7 @@ def test_text_request_uses_only_current_input_and_server_builds_pending_action()
     assert captured[0].url == 'https://provider.test/v1/chat/completions'
     assert captured[0].headers['Authorization'] == 'Bearer explicit-http-substitute-key'
     assert sent['stream'] is False and sent['response_format'] == {'type': 'json_object'}
+    assert 'thinking' not in sent  # MiMo-specific fields must not leak to other providers.
     assert sent['messages'][1]['content'] == [{'type': 'text', 'text': body.text}]
     assert snap.elder_id not in captured[0].content.decode() and snap.memory.markdown not in captured[0].content.decode()
     assert len(captured) == 1 and plan.chat_provider == 'real' and plan.preference is None
@@ -74,6 +75,30 @@ def test_image_request_sends_only_authorized_bytes_without_local_path_or_ticket(
     assert parts[1]['image_url']['url'] == 'data:image/png;base64,'+base64.b64encode(PNG).decode()
     assert 'private-asset' not in json.dumps(captured[0])
     assert plan.actions[0].action.preview.image_asset_ids == ['private-asset']
+
+
+@pytest.mark.parametrize('with_image', [False, True])
+def test_mimo_non_thinking_text_and_image_keep_structured_pending_actions(with_image):
+    captured = []
+    def handler(request):
+        sent = json.loads(request.content)
+        captured.append(sent)
+        assert sent['model'] == 'mimo-v2.6-flash'
+        assert sent['thinking'] == {'type': 'disabled'}
+        assert sent['response_format'] == {'type': 'json_object'}
+        return response()
+    body, snap = inputs(image_asset_ids=['meal-image'] if with_image else [])
+    if with_image:
+        snap = replace(snap, images=(ImageInput('meal-image', 'image/png', PNG),))
+    chat = RealUnderstanding(api_key='explicit-http-substitute-key',
+        base_url='https://api.xiaomimimo.com/v1', model='mimo-v2.6-flash',
+        transport=httpx.MockTransport(handler))
+    plan = chat.plan(body, snap)
+    parts = captured[0]['messages'][1]['content']
+    assert [part['type'] for part in parts] == (['text', 'image_url'] if with_image else ['text'])
+    assert len(captured) == 1 and plan.chat_provider == 'real'
+    assert plan.actions[0].action.status == 'pending' and plan.actions[0].action.requires_confirmation
+    assert plan.actions[0].payload['checkin']['payload']['foods'] == ['青菜', '豆腐']
 
 
 @pytest.mark.parametrize('status,retryable', [(401, False), (403, False), (429, True), (500, True), (503, True)])
