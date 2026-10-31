@@ -114,7 +114,7 @@ export function EggBasket() {
       <div className="egg-copy">
         <span className="eyebrow">
           <Sparkles size={14} />
-          我的小小收获
+          我的攒鸡蛋进度
         </span>
         <p>
           <strong>{shown}</strong>
