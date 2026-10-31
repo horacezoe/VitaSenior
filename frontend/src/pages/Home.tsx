@@ -312,10 +312,6 @@ export function ChildNav() {
         <ShoppingBag size={22} />
         <span>虚拟商城</span>
       </Link>
-      <Link to="/settings">
-        <UserRound size={22} />
-        <span>我的</span>
-      </Link>
     </nav>
   );
 }

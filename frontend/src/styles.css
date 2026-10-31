@@ -1,18 +1,18 @@
 :root {
   font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   font-synthesis: none;
-  color: #233f3c;
-  background: #e5ede8;
-  --accent: #1b7064;
-  --accent-dark: #14564d;
-  --soft: #e8f2ec;
-  --paper: #f6f9f6;
-  --text: #233f3c;
-  --muted: #60756e;
-  --line: #dce7e0;
+  color: #183f32;
+  background: #d9eadd;
+  --accent: #08795f;
+  --accent-dark: #055b46;
+  --soft: #d6f0df;
+  --paper: #f0f8ef;
+  --text: #183f32;
+  --muted: #506e5c;
+  --line: #c7dfcc;
   --surface: #ffffff;
   --surface-shadow: 0 4px 18px #244b3b06;
-  --accent-shadow: #14564d24;
+  --accent-shadow: #08795f30;
   --focus: #286ba5;
   --app-height: 100dvh;
   line-height: 1.6;
@@ -95,15 +95,15 @@ small {
   font-size: 18px;
 }
 .theme-child {
-  --accent: #8a631f;
-  --accent-dark: #684815;
-  --soft: #f8efd9;
-  --paper: #fbf9f2;
-  --text: #493f2b;
-  --muted: #786a4e;
-  --line: #e9e1d0;
+  --accent: #99600d;
+  --accent-dark: #714207;
+  --soft: #ffe9b8;
+  --paper: #fff8e7;
+  --text: #4e371d;
+  --muted: #7a6240;
+  --line: #ecd5a6;
   --surface-shadow: 0 4px 18px #75562006;
-  --accent-shadow: #68481524;
+  --accent-shadow: #99600d30;
   color: var(--text);
 }
 .page {

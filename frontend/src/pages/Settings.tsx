@@ -1,5 +1,5 @@
 import { exportDiagnostics } from "../media/diagnostics";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   LogOut,
@@ -251,46 +251,63 @@ export default function Settings({ demoMode = false }: { demoMode?: boolean }) {
 }
 
 function IncentiveRules() {
-  const [open, setOpen] = useState(false),
-    timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stop = () => {
-    if (timer.current) clearTimeout(timer.current);
-    setOpen(false);
-  };
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
+  const [pinned, setPinned] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const help = useRef<HTMLSpanElement>(null);
+  const tooltipId = useId();
+  const open = pinned || hovered;
+  useEffect(() => {
+    if (!open) return;
+    const close = () => { setPinned(false); setHovered(false); };
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !help.current?.contains(event.target)) close();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
   return (
-    <section className="form-section">
-      <h2>
-        激励规则{" "}
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="长按查看激励规则"
-          aria-expanded={open}
-          onPointerDown={() => {
-            timer.current = setTimeout(() => setOpen(true), 450);
+    <section className="form-section incentive-rules">
+      <div className="incentive-heading">
+        <h2>激励规则</h2>
+        <span className="incentive-help" ref={help}
+          onPointerEnter={(event) => { if (event.pointerType === "mouse") setHovered(true); }}
+          onPointerLeave={() => setHovered(false)}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setPinned(false); setHovered(false);
+            }
           }}
-          onPointerUp={stop}
-          onPointerCancel={stop}
-          onPointerLeave={stop}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") setOpen(true);
-          }}
-          onBlur={stop}
         >
-          ？
-        </button>
-      </h2>
-      {open && (
-        <p role="tooltip" className="note-card">
-          膳食、运动、用药：每条经服务端确认的新有效打卡获得1枚鸡蛋。历史导入记录不计入；重复提交、同餐替换与纠正不重复奖励。鸡蛋在首页回收动画后仍保留，取消记录暂不扣回。当前余额为本设备核对结果，换设备或清空存储不保证完整累计。
-        </p>
-      )}
+          <button type="button" className="incentive-help-button"
+            aria-label="查看激励规则" aria-expanded={open}
+            aria-describedby={open ? tooltipId : undefined}
+            onFocus={(event) => { if (event.currentTarget.matches(":focus-visible")) setHovered(true); }}
+            onClick={() => { setPinned((value) => !value); setHovered(false); }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="11" fill="currentColor" />
+              <path d="M9 8.5a3 3 0 0 1 6 0c0 2-3 2-3 4.5" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" />
+              <circle cx="12" cy="17" r="1.2" fill="#fff" />
+            </svg>
+          </button>
+          {open && (
+            <span id={tooltipId} role="tooltip" className="incentive-popover">
+              <strong>鸡蛋如何积累</strong>
+              <span>膳食、运动、用药：每条经服务端确认的新有效打卡获得1枚鸡蛋。</span>
+              <span>历史导入记录不计入；重复提交、同餐替换与纠正不重复奖励。</span>
+              <span>鸡蛋在首页回收动画后仍保留，取消记录暂不扣回。</span>
+              <span>当前余额为本设备核对结果，换设备或清空存储不保证完整累计。</span>
+            </span>
+          )}
+        </span>
+      </div>
     </section>
   );
 }

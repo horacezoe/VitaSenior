@@ -373,9 +373,9 @@ button.menu-link {
 /* Keep the call entry prominent and the health/reward areas quieter. */
 .companion-hero {
   background:
-    radial-gradient(ellipse at 50% 20%, #fbfff7 0, transparent 58%),
-    linear-gradient(160deg, #e9f3e8, #dceee6);
-  border-color: #cfe2d5;
+    radial-gradient(ellipse at 50% 20%, #f2ffe5 0, transparent 58%),
+    linear-gradient(160deg, #cfedcc, #a9ddc8);
+  border-color: #9bceb0;
   border-radius: 28px;
   box-shadow: inset 0 1px 0 #ffffffcc, 0 6px 20px #1b58400a;
 }
@@ -383,7 +383,7 @@ button.menu-link {
 .hero-badge {
   background: #ffffffb3;
   border-color: #ffffff;
-  color: #4d6e59;
+  color: #306448;
   font-size: 12px;
 }
 
@@ -396,7 +396,7 @@ button.menu-link {
 }
 
 .companion-copy p {
-  color: #526e60;
+  color: #305d47;
   font-size: 14px;
   line-height: 1.7;
 }
@@ -418,6 +418,12 @@ button.menu-link {
   margin-bottom: 8px;
 }
 
+.health-shortcut-icon {
+  color: #08795f;
+  background: #cdebd8;
+  border: 1px solid #add5bd;
+}
+
 .health-shortcut small,
 .egg-copy .eyebrow,
 .egg-copy p > span,
@@ -437,8 +443,8 @@ button.menu-link {
 }
 
 .egg-garden {
-  background: linear-gradient(0deg, #e8f1df, #f2f7ed80);
-  border: 1px solid #dfe9d6;
+  background: linear-gradient(135deg, #fff4ce, #f1e4a8);
+  border: 1px solid #e2ce82;
   padding-left: 15px;
 }
 
@@ -479,8 +485,8 @@ button.menu-link {
 }
 
 .care-entry {
-  background: linear-gradient(125deg, #f8edd4, #f5e3b9);
-  border-color: #e7d3a8;
+  background: linear-gradient(125deg, #ffecbf, #f8d285);
+  border-color: #dfb65e;
   box-shadow: inset 0 1px 0 #ffffffa6;
 }
 
@@ -491,7 +497,7 @@ button.menu-link {
 }
 
 .child-nav {
-  background: #fffdf6f5;
+  background: #fff8e9f5;
   border-color: var(--line);
   box-shadow: 0 -5px 22px #68481506;
 }
@@ -589,9 +595,19 @@ button.menu-link {
 }
 
 .shop-art {
-  background: linear-gradient(145deg, #fcf6e8, #f1e6cd);
-  border: 1px solid #eee3cd;
+  background: linear-gradient(145deg, #fff0bb, #f7d899);
+  border: 1px solid #e8cb87;
   border-radius: 14px;
+}
+
+.shop-grid > .card:nth-child(3n + 2) .shop-art {
+  background: linear-gradient(145deg, #e4f4d5, #bfdfb6);
+  border-color: #b5d5ac;
+}
+
+.shop-grid > .card:nth-child(3n) .shop-art {
+  background: linear-gradient(145deg, #deeffd, #b8d7ef);
+  border-color: #abc9df;
 }
 
 .shop-grid h3 {
@@ -661,13 +677,99 @@ button.menu-link {
   body {
     background:
       radial-gradient(ellipse at 22% 15%, #d6e5da, transparent 55%),
-      #e5ede8;
+      #d9eadd;
   }
 
   .app-shell {
     border-color: #d3e0d7;
     box-shadow: 0 24px 72px #29483b1a, 0 3px 12px #29483b0a;
   }
+}
+
+/* Compact help glyph; the rules float above it without moving page content. */
+.incentive-rules {
+  position: relative;
+}
+
+.incentive-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.incentive-heading h2 {
+  margin: 0;
+}
+
+.incentive-help {
+  display: inline-flex;
+  align-items: center;
+}
+
+.incentive-help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: #68756c;
+  border-radius: 50%;
+}
+
+.incentive-help-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.incentive-help-button:hover,
+.incentive-help-button[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.incentive-help-button:focus-visible {
+  outline-offset: 1px;
+}
+
+.incentive-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% - 26px);
+  z-index: 50;
+  display: block;
+  width: min(340px, 100%);
+  max-height: min(420px, calc(100dvh - 80px));
+  overflow-y: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 10px 32px #183f3226;
+  font-size: 14px;
+  line-height: 1.8;
+  font-weight: 400;
+}
+
+.incentive-popover strong,
+.incentive-popover > span {
+  display: block;
+}
+
+.incentive-popover strong {
+  margin-bottom: 8px;
+  color: var(--accent-dark);
+  font-size: 15px;
+}
+
+.incentive-popover > span + span {
+  margin-top: 8px;
+}
+
+.large-text .incentive-popover {
+  font-size: 17px;
 }
 
 @media (max-width: 380px) {
