@@ -1,18 +1,13 @@
 """HTTP substitutes by default. Test PCM is not evidence of synthesized speech.
 
-Only test_live_tts_and_media_round_trip can incur a charge, and requires an
-explicit VITASENIOR_LIVE_TTS=1 plus local MiMo credentials/configuration.
+Real requests live only in the explicit standalone probe_real_tts.py script.
 """
 import asyncio
 import base64
-import hashlib
 import io
 import json
-import os
 import struct
-import time
 import wave
-from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -29,6 +24,7 @@ from app.providers.real_audio import MiMoTTS
 from app.seed import framework_seed
 from app.contracts.context import Actor
 from app.schemas.enums import Role
+from app.providers.real_tts import MiMoTTS as ConfiguredMiMoTTS, build
 
 
 TEXT = "您好，这是新生成的中文短回复。请先阅读页面上的完整文字，再播放语音。"
@@ -91,10 +87,12 @@ def test_invalid_or_long_text_never_calls_or_truncates(text):
     provider = adapter(lambda request: calls.append(request))
     with pytest.raises(AppError) as caught:
         provider.synthesize(text)
-    assert caught.value.status == 422 and caught.value.code == "VALIDATION_ERROR"
     assert calls == []
     if len(text) > 200:
-        assert caught.value.details == {"max_chars": 200, "actual_chars": 201}
+        assert caught.value.status == 502 and caught.value.code == "PROVIDER_ERROR"
+        assert caught.value.details == {"provider": "mimo", "reason": "text_too_long", "max_chars": 200, "actual_chars": 201}
+    else:
+        assert caught.value.status == 422 and caught.value.code == "VALIDATION_ERROR"
 
 
 def test_text_at_demo_limit_is_sent_without_truncation_and_voice_override_is_rejected():
@@ -399,28 +397,190 @@ def test_speech_registers_through_existing_media_port_and_ticket_returns_all_byt
     assert speech.content == audio and speech.is_mock is False
 
 
-@pytest.mark.skipif(os.getenv("VITASENIOR_LIVE_TTS") != "1", reason="Paid TTS is opt-in: VITASENIOR_LIVE_TTS=1")
-def test_live_tts_and_media_round_trip(tmp_path):
-    required = ["MIMO_API_KEY", "MIMO_TTS_MODEL", "MIMO_TTS_VOICE"]
-    if any(not os.getenv(name) for name in required):
-        pytest.skip("Live TTS not run: local key/model/voice missing")
-    text = os.getenv("VITASENIOR_LIVE_TTS_TEXT") or (
-        "您好，这是银龄健康助手的新语音测试。请先查看页面上的完整文字，再听这段语音。测试时间："
-        + datetime.now(timezone.utc).strftime("%Y年%m月%d日%H时%M分%S秒") + "。")
-    provider = MiMoTTS(api_key=os.environ[required[0]], model=os.environ[required[1]],
-                      voice=os.environ[required[2]])
-    started = time.monotonic()
-    speech = provider.synthesize(text)  # Exactly one paid request, no automatic retry.
-    elapsed = time.monotonic() - started
-    assert speech.text == text and speech.is_mock is False
-    assert_media_round_trip(speech, tmp_path)
-    output = tmp_path / "live-tts.wav"
-    output.write_bytes(speech.content)
-    evidence = {"provider": provider.name, "is_mock": speech.is_mock, "model": provider.model,
-                "voice": provider.voice, "text": text, "mime_type": speech.mime_type,
-                "size_bytes": len(speech.content), "duration_ms": speech.duration_ms,
-                "elapsed_seconds": round(elapsed, 3), "sha256": hashlib.sha256(speech.content).hexdigest(),
-                "generated_at": datetime.now(timezone.utc).isoformat(), "listened": False,
-                "scope": "direct provider + existing MediaPort/MEDIA03; AI02/Agent not wired"}
-    (tmp_path / "live-tts.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("LIVE_TTS_OK", json.dumps({"audio": str(output), **evidence}, ensure_ascii=False))
+def test_frozen_build_handshake_has_real_name_default_voice_and_timeout():
+    provider = build(Settings(tts_provider="real", tts_api_key=KEY,
+                     tts_base_url="https://api.xiaomimimo.com/v1/", tts_model=MODEL,
+                     tts_timeout_seconds=0.5))
+    assert isinstance(provider, ConfiguredMiMoTTS)
+    assert provider.name == "real" and provider.is_mock is False
+    assert provider.voice == "mimo_default" and provider.timeout_seconds == 0.5
+    assert provider.connect_timeout_seconds == 0.5
+
+
+@pytest.mark.parametrize("url", ["http://api.xiaomimimo.com/v1", "https://untrusted.invalid/v1",
+                                "https://api.xiaomimimo.com/v1?key=secret"])
+def test_build_rejects_wrong_endpoint_without_sending_credentials(url):
+    with pytest.raises(ValueError, match="official HTTPS API root"):
+        build(Settings(tts_provider="real", tts_api_key=KEY, tts_model=MODEL, tts_base_url=url))
+
+
+@pytest.fixture
+def configured_audio(monkeypatch, tmp_path):
+    for name, value in {"DATA_DIR": str(tmp_path / "configured"), "SCANNER_ENABLED": "false",
+                        "CHAT_PROVIDER": "mock", "ASR_PROVIDER": "mock", "TTS_PROVIDER": "real",
+                        "TTS_API_KEY": KEY, "TTS_BASE_URL": "https://api.xiaomimimo.com/v1",
+                        "TTS_MODEL": MODEL, "TTS_VOICE": VOICE,
+                        "PUBLIC_BASE_URL": "http://testserver"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    app = create_app()  # Actual Settings, main and A factory, no provider injection.
+    assert isinstance(app.state.agent_tts, ConfiguredMiMoTTS)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        seed = framework_seed(app.state.sessions, app.state.clock)
+        tokens = {}
+        for name in ["elder", "unbound_child"]:
+            account = {key: seed[name][key] for key in ["phone", "role"]}
+            challenge = client.post("/api/v1/auth/code", json=account).json()["data"]["challenge_id"]
+            result = client.post("/api/v1/auth/login", json={**account, "challenge_id": challenge, "code": "123456"})
+            assert result.status_code == 200
+            tokens[name] = {"Authorization": "Bearer " + result.json()["data"]["access_token"]}
+        yield app, client, seed, tokens, monkeypatch
+
+
+def test_actual_factory_runtime_ai02_and_media_bytes(configured_audio):
+    app, client, seed, tokens, _ = configured_audio
+    calls, audio = [], pcm_wav()
+
+    def handler(request):
+        calls.append(request)
+        with UnitOfWork(app.state.sessions) as unit:
+            unit.session.connection().exec_driver_sql("SELECT 1")
+            unit.commit()  # The real AI02 flow did not retain a database write lock.
+        return audio_response(audio)
+
+    app.state.agent_tts._transport = httpx.MockTransport(handler)
+    runtime = client.get("/api/v1/runtime", headers=tokens["elder"])
+    assert runtime.json()["data"]["providers"] == {"chat": "mock", "asr": "mock", "tts": "real"}
+    result = client.post("/api/v1/ai/tts", headers=tokens["elder"],
+                         json={"elder_id": seed["elder"]["elder_id"], "text": TEXT})
+    assert result.status_code == 200, result.text
+    body = result.json()["data"]
+    assert body["provider"] == "real" and body["is_mock"] is False
+    asset = body["audio_asset"]
+    assert asset["duration_ms"] == 100 and asset["mime_type"] == "audio/wav"
+    fetched = client.get(asset["content_url"])
+    assert fetched.status_code == 200 and fetched.content == audio
+    assert fetched.headers["content-type"] == "audio/wav" and len(calls) == 1
+
+
+@pytest.mark.parametrize("account,status", [(None, 401), ("unbound_child", 403)])
+def test_ai02_access_is_checked_before_paid_transport(configured_audio, account, status):
+    app, client, seed, tokens, _ = configured_audio
+    calls = []
+    app.state.agent_tts._transport = httpx.MockTransport(lambda request: calls.append(request))
+    result = client.post("/api/v1/ai/tts", headers=tokens[account] if account else {},
+                         json={"elder_id": seed["elder"]["elder_id"], "text": TEXT})
+    assert result.status_code == status and calls == []
+
+
+@pytest.mark.parametrize("mode", ["success", "timeout", "long_text"])
+def test_agent_speech_real_provenance_and_text_degradation(configured_audio, mode):
+    from dataclasses import replace
+    from sqlalchemy import func, select
+    from app.models.health import Checkin
+    from app.models.identity import MediaAsset
+
+    app, client, seed, tokens, monkeypatch = configured_audio
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if mode == "timeout":
+            raise httpx.ReadTimeout("substitute timeout", request=request)
+        return audio_response(pcm_wav())
+
+    app.state.agent_tts._transport = httpx.MockTransport(handler)
+    if mode == "long_text":
+        original = app.state.agent_chat.plan
+        monkeypatch.setattr(app.state.agent_chat, "plan", lambda *args: replace(original(*args), reply="中" * 201))
+    result = client.post("/api/v1/agent/turns", headers={**tokens["elder"], "Idempotency-Key": "audio-turn"},
+                         json={"elder_id": seed["elder"]["elder_id"], "client_turn_id": "audio-turn",
+                               "text": "这是我的演示午餐", "mock_fixture_id": "meal_lunch"})
+    assert result.status_code == 201, result.text
+    body = result.json()["data"]
+    assert body["actions"][0]["status"] == "pending" and body["reply"]["text"]
+    with app.state.sessions() as tx:
+        assert tx.scalar(select(func.count()).select_from(Checkin)) == 0
+        assert tx.scalar(select(func.count()).select_from(MediaAsset)) == (1 if mode == "success" else 0)
+    if mode == "success":
+        assert body["providers"]["tts"] == "real" and body["reply"]["audio_asset_id"]
+        assert body["degraded"] == [] and len(calls) == 1
+    else:
+        assert body["reply"]["audio_asset_id"] is None and "tts_unavailable" in body["degraded"]
+        if mode == "long_text":
+            assert body["reply"]["text"] == "中" * 201 and calls == []
+        else:
+            assert len(calls) == 1
+
+
+@pytest.mark.parametrize("payload,status", [({"text": "中" * 201}, 502),
+                                           ({"text": TEXT, "voice_id": "unknown"}, 422)])
+def test_ai02_invalid_voice_or_overlength_cannot_create_media(configured_audio, payload, status):
+    app, client, seed, tokens, _ = configured_audio
+    calls = []
+    app.state.agent_tts._transport = httpx.MockTransport(lambda request: calls.append(request))
+    result = client.post("/api/v1/ai/tts", headers=tokens["elder"],
+                         json={"elder_id": seed["elder"]["elder_id"], **payload})
+    assert result.status_code == status and calls == []
+
+
+def test_mock_restart_after_real_tts_needs_no_key_and_retains_session(configured_audio):
+    from app.providers.mock_audio import MockTTS
+    _, _, _, tokens, monkeypatch = configured_audio
+    monkeypatch.setenv("TTS_PROVIDER", "mock")
+    for name in ["TTS_API_KEY", "TTS_BASE_URL", "TTS_MODEL", "TTS_VOICE"]:
+        monkeypatch.delenv(name, raising=False)
+    app = create_app()
+    assert isinstance(app.state.agent_tts, MockTTS)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/runtime", headers=tokens["elder"])
+        assert response.status_code == 200 and response.json()["data"]["providers"]["tts"] == "mock"
+
+
+def load_probe():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("audio_probe_for_test", Path(__file__).with_name("probe_real_tts.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_standalone_probe_refuses_unapproved_request_before_reading_env(monkeypatch):
+    monkeypatch.delenv("LIVE_TTS", raising=False)
+    with pytest.raises(SystemExit) as caught:
+        load_probe().run(["--env-file", "this-file-must-not-be-read.env"])
+    assert caught.value.code == 2
+
+
+def test_standalone_probe_normal_factory_one_substitute_request_and_isolated_db(monkeypatch, tmp_path):
+    import os
+    from unittest.mock import patch
+
+    probe = load_probe()
+    probe.BACKEND = tmp_path / "backend"
+    foreign = tmp_path / "must-not-use-data"
+    local_env = tmp_path / ".env"
+    local_env.write_text(f"TTS_API_KEY={KEY}\nTTS_BASE_URL=https://api.xiaomimimo.com/v1\n"
+                         f"TTS_MODEL={MODEL}\nTTS_VOICE={VOICE}\nDATA_DIR={foreign}\n"
+                         f"DATABASE_URL=sqlite:///{foreign}/must-not-open.sqlite3\n", encoding="utf-8")
+    original = ConfiguredMiMoTTS.__init__
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return audio_response(pcm_wav())
+
+    def substituted_init(self, **kwargs):
+        original(self, **kwargs, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(ConfiguredMiMoTTS, "__init__", substituted_init)
+    with patch.dict(os.environ):
+        probe.run(["--env-file", str(local_env), "--live", "--text", TEXT])
+    assert len(calls) == 1 and not foreign.exists()
+    manifests = list(probe.BACKEND.glob("data/f2-audio-b/evidence/*/evidence.json"))
+    assert len(manifests) == 1
+    evidence = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert evidence["provider"] == "real" and evidence["listened"] is False
+    assert evidence["text"] == TEXT and evidence["mime_type"] == "audio/wav"
+    assert KEY not in manifests[0].read_text(encoding="utf-8")

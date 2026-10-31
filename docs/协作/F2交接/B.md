@@ -1,85 +1,81 @@
-# F2 B：TTS 适配器与集成待办
+# F2 B：MiMo TTS 握手与验收
 
-日期：2026-10-31（Asia/Hong_Kong）。**按用户最新选择改为小米 MiMo；离线适配器已通过，真实 TTS 未验收，ASR 延期。** 等 C 完成 env 示例，再拉取到本地、配置不被追踪的真实 `.env`；本轮未创建/读取密钥文件、未调用真实供应商。A 的共享提交尚未合入，AI02/Agent 生产入口未接线。旧 `6651786` 的 SiliconFlow 候选已被本次实现替换，不保留第二家 provider 或兼容别名。
+2026-10-31（Asia/Hong_Kong）。**已按 A 的冻结契约接好离线入口；真实 TTS 与实听待本机 key。ASR 延期。**
 
-## 基线与文件
+## 基线与协作进度
 
-- 共同起点：`363f6376a63d696ba36b1bc7fc426e8b159dc196`。
-- 分支：`backend/f2-audio`；worktree：`E:/CUHKSZ/project/vitasenior/.audio-work`，Git 主库位于 `.framework-review`。没有改主库工作区，也没有 reset、清库、移动标签或推送。
-- 仅新增 `backend/app/providers/real_audio.py`、`backend/tests/providers/test_real_audio.py` 和本文件。配置/公共协议/路由/依赖/提案状态机未修改。
-- B 独立运行约定：在本 worktree 的 `backend` 使用 `DATA_DIR=<backend绝对路径>/data/f2-audio-b`、清空继承的 `DATABASE_URL` 以使用该目录的 `vitasenior.sqlite3`，端口预留 `8022`；本轮未启动持久服务。测试实际使用 `.pytest_cache` 下的独立临时目录，未使用运行库。
+- 共同起点：`363f6376a63d696ba36b1bc7fc426e8b159dc196`；B 分支 `backend/f2-audio`，独立 worktree `E:/CUHKSZ/project/vitasenior/.audio-work`。
+- 已正常合入 A `origin/f2/platform@24debddce9f5f2a88ee68f56f6245f7bba5b4c95`，合并提交 `41906d226adef26cbbac58ac6931dd5b1e86d1d8`，零冲突，包含 A 的 `9f46203` 握手和 C 的 `96177dc`。
+- C 最新交接报告：正常工厂/Uvicorn 的真实文字、餐食照片、确认落库、看板/日报、重启及显式 mock 回退均通过；A 已合入复验。此处是 A/C 的证据，不冒充 B 已重复发起供应商请求。
+- B 自己的改动仅 `providers/real_audio.py`、用户后续明确新增的 `providers/real_tts.py`、`tests/providers/test_real_audio.py`、按 A 要求提供的独立 `tests/providers/probe_real_tts.py` 和本文件。公共/其他领域文件只来自正常 merge，没有由 B 编辑。
+- 测试用临时 SQLite；B 本机演示数据 `backend/data/f2-audio-b`、默认数据库 `vitasenior.sqlite3`，端口 8022。没有操作他人的运行库、重置历史或移动标签。
 
-## 可调用入口与限制
+## A 可直接使用的冻结入口
 
 ```python
-from app.providers.real_audio import MiMoTTS
-
-tts = MiMoTTS(
-    api_key=local_secret,                        # 仅在本机配置，不提交
-    model="mimo-v2.5-tts",
-    voice="冰糖",                              # 或 mimo_default，需实际确认
-    timeout_seconds=20,
-    connect_timeout_seconds=5,
-)
-speech = tts.synthesize(final_text)              # 退出全部 UoW 后调用
-# 新的短写 UoW 中重新鉴权，再调用现有 MediaPort.register_generated：
-# content=speech.content, mime_type=speech.mime_type,
-# duration_ms=speech.duration_ms, purpose="agent_audio"
-# 最后由调用方 commit；不得向 provider 传 Session。
+from app.providers.real_tts import build
+tts = build(settings)  # A 的现有 composition 已调用此处
+speech = tts.synthesize(final_text)  # 事务外；随后通过既有 MediaPort 登记
 ```
 
-供应商固定 `https://api.xiaomimimo.com/v1/chat/completions`，用 `api-key` 鉴权；单次非流式请求、不跟随重定向、不重试、不隐式切 mock。待播报原文放在 `messages=[{"role":"assistant","content":text}]`，设置 `audio={"format":"wav","voice":已配置音色}`；从返回 JSON 的 `choices[0].message.audio.data` 严格 Base64 解码。只支持 `mimo-v2.5-tts` 预置音色，不做克隆/设计。官方已下线旧 `mimo-v2-tts`，构造器明确拒绝，不静默替换模型。
+`real_tts.MiMoTTS` 复用 `real_audio` 的唯一 MiMo HTTP/音频实现：生产入口 `name='real'`、`is_mock=False`，返回 `Speech.is_mock=False`、原样 `text`、`audio/wav`、真实帧时长。未增加第二个 provider 协议、媒体库或应用入口。AI02/Agent 来源与媒体登记使用 C 已合入的 flow。
 
-构造器要求显式 key/model/voice，不读取环境、不自动加载 `.env`、构造时不联网。9 个已公布音色 ID 可配置其中一个，请求 `voice_id` 只能为空或等于该配置。`冰糖` 是中文音色；`mimo_default` 随集群映射，示例尚未实听。变量名最终等 C/A 示例统一，不另建配置入口。本次 `git check-ignore --no-index .env .env.local` 在 backend 运行，输出仅 `.env`：已有忽略规则覆盖 `backend/.env`；最终若使用其他文件名，应同步检查实际忽略规则。
+配置与 A 一致，不再使用早期建议的 MIMO_* 变量：
 
-复用 `TTSProvider` / `Speech`：`tts.name="mimo"`、`tts.is_mock=False`；返回 `Speech.is_mock=False`、`mime_type="audio/wav"`、24 kHz / 16-bit PCM / mono 或 stereo，时长由完整帧计算。原文逐字传入并保存在 `speech.text`，不截取、分段、添加控制标签或使用固定录音。Demo 上限 **200 个 Python 字符**（含空白）；超限整段 `422 VALIDATION_ERROR`，保留全文显示，公开请求 DTO 的 5000 字限制不改。
+```dotenv
+TTS_PROVIDER=real
+TTS_API_KEY=<仅在本机填写>
+TTS_BASE_URL=https://api.xiaomimimo.com/v1
+TTS_MODEL=mimo-v2.5-tts
+TTS_VOICE=冰糖
+```
 
-HTTP 只接受 JSON，响应体限 20 MiB + 64 KiB（涵盖 Base64 和包络）；解码后最多 15 MiB / 120 秒。拒绝 JSON 错误包、缺音频/多 choice、非 `stop` 的 finish_reason（含 length/过滤/复读截断/缺失）、非法 Base64、错误模型，以及可选 transcript 与全文不符。校验完整 RIFF、全部 chunk 边界、唯一 fmt/data、PCM 编码/采样率/块对齐/帧长、HTTP 声明长度；拒绝空、全零静音、类型不符或截断音频。不转码；容器完整及 stop **不能证明模型逐字读全或音质可接受**，仍需真实请求与人工实听。
+`TTS_VOICE` 可省略，默认 `mimo_default`。仅支持该模型的预置音色；未知 `voice_id` 明确 422。API root 只接受上述官方 HTTPS 地址（允许末尾 `/`），配置错误在构建时失败，不把 key 发到任意地址。供应商路径 `/chat/completions`，原文置于 assistant message，非流式请求 WAV，解析 JSON 的 `choices[0].message.audio.data`。旧型号、音色设计/克隆不在本轮范围。
 
-`synthesize` 保留同步协议，内部用 HTTPX AsyncClient + Python 3.11 `asyncio.timeout` 保证请求头及整个响应体总计 20 秒可取消，连接最多 5 秒。该内部选择与计划“同步 HTTP”字面有差异，用于避免每次 read 都重新获得 20 秒；不改变业务入口。现有 FastAPI 同步路由在线程池调用；已有事件循环的调用方也须在线程池调用同步协议。
+文本限 200 个 Python 字符（含空白），超限整段 `502 PROVIDER_ERROR`、reason=text_too_long，不截断；这使 Agent 的现有 catch 保留全文及 `tts_unavailable`。空白/NUL/未知音色 422。连接最多 5 秒、整个供应商请求 20 秒，能取消缓慢响应，无重试/隐式 mock；同步协议内部用 HTTPX AsyncClient 实现可取消的总期限，不改业务入口。
 
-错误复用 `AppError`：超时/408/504 → `504 PROVIDER_TIMEOUT`；401/403/429/其他供应商失败或无效音频 → `502 PROVIDER_ERROR`。上游鉴权失败不误报为用户登录失效；`details` 仅含 provider/reason/上游状态码。429/5xx/网络故障标记 retryable，但不自动重试。错误不公开供应商响应体、密钥或输入文字。输入无效/超长/音色不符为 422，属于 TTS 文字降级而非成功音频。
+JSON 最多 20 MiB+64 KiB，解码音频最多 15 MiB/120 秒；严格 Base64、单 choice、finish_reason=stop，校验完整 RIFF/chunk/24kHz/16-bit PCM/帧长并拒绝空、全零静音、截断。若供应商提供 transcript，必须与全文一致。容器完整不能证明逐字读全和音质，仍需真实请求与人工实听。上游超时 504，其他供应商失败/无效音频 502；错误不公开 key、供应商响应体或输入文字。
 
-官方参考：[TTS 用法/请求与音频路径](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[鉴权/响应结束原因](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)、[模型下线公告](https://mimo.mi.com/docs/zh-CN/updates/deprecate)。仅核对文档，尚无真实请求；如实际响应与契约假设不一致，应凭真实证据调整，不能放宽截断/无音频失败规则冒充通过。
+提案仍用 F1 精确全文 fixture，未改提案状态机或 60 秒窗口；播放不形成 taken。
 
-## A / C 必须完成的接线
+## 本机 env 与真实探针
 
-接实际入口前先正常合入 A 发布的共享提交，再由 A/C 在自己的白名单接线；本分支没有替代公共工厂或测试覆盖生产配置。
+`backend/.env.mimo.example` 已从 C/A 正常合入。B 只在自己的 worktree 创建了被忽略的 `backend/.env`，保留空 key，改用 B 的独立数据/端口并补 TTS_*；没有覆盖已有私密文件。`git check-ignore --no-index .env` 在 backend 实际输出 `.env`。请用户在本机填写 `TTS_API_KEY`，不要在聊天或 Git 传递密钥。
 
-1. **A/C**：在统一 env 示例和工厂中选择 `MiMoTTS`，默认仍 mock，真实配置缺 key/model/voice 明确失败；runtime 从实例 name 生成。建议示例采用 `MIMO_API_KEY`、`MIMO_TTS_MODEL=mimo-v2.5-tts`、`MIMO_TTS_VOICE=冰糖`，最终名以发布示例为准，勿沿用已下线 TTS/理解模型。`httpx==0.28.1` 已在完整 lock，但 pyproject 只列为 test extra，运行依赖由 A 处理。本分支不改配置/依赖。
-2. **A/C**：`application/agent_flows.py::tts` 当前返回硬编码 `provider='mock', is_mock=True`，须取实际 `state.agent_tts.name` 和 `speech.is_mock`；仅换 provider 实例会错误标记。保留原来的短读鉴权→事务外 TTS→短写重新鉴权与媒体登记流程。
-3. **C / A 共享定义**：`services/agent_service.py::record_turn` 的 TTS 来源仍硬编码 `mock`。现有 `Speech` 没有 provider 字段，A/C 应决定最小传递方式并集中修改；不要由 B 复制/替换 Speech。Agent 最终文字和 `speech.text` 不同就不登记错误音频；需要补播时前端以最终文字调用 AI02，不重复执行确认动作。
-4. **C**：`agent_flows.turn` 的 TTS catch 目前只接 501/502/504；本适配器的超长输入会 422。仅在合成阶段处理该可预期校验失败，保留最终全文、`audio_asset_id=null`、`degraded=['tts_unavailable']`，不吞其他业务错误。AI02 无音频时返回明确错误，前端保留自己已有文字。
-5. **A/C**：接线后补 AI02→MEDIA03、Agent 成功来源/失败降级回归，并验证供应商等待时另一个真实请求可写库。本分支只证明独立适配器和现有 MediaPort/MEDIA03 可以配合，不能替代这些入口验收。
+独立探针不被 pytest 收集；显式读 TTS_*，忽略文件里的数据库地址、DATA_DIR 和 chat 选择，始终用自己的临时数据库、真实默认工厂/登录/Runtime/AI02/票据 MEDIA03。仅一次供应商请求，无重试，不调用真实 chat：
 
-提案继续 F1 精确全文 fixture；不使用本适配器改提案状态/语音或启动 60 秒窗口。不把播放当服药。ASR 未新增，既有 mock 仍仅接受精确已知录音，未知录音不能得到固定 transcript。
+```powershell
+# backend 工作目录，Python 为 ../../.review-venv/Scripts/python.exe
+python tests/providers/probe_real_tts.py --env-file .env --live
+# 可选：--text '这是一条新的中文完整播报测试。'
+```
 
-## 实际验证
+也可在进程设置 `LIVE_TTS=1`；无显式启用会退出 2。缺 key/base/model 同样退出 2。成功后 `data/f2-audio-b/evidence/<独立时间戳>/speech.wav` 和 `evidence.json` 保留文本、时间、模型/音色、MIME、时长/字节数、SHA-256、耗时、Runtime 与 `listened=false`，不保存 token/票据/key。真实探针用 TestClient 驱动正常应用，尚不代替真实 TCP/前端设备播放。
 
-环境：Windows / Python 3.11.5 / 既有 `.review-venv` / HTTPX 0.28.1 / Pytest 8.4.2。无新依赖。以下命令工作目录为本 worktree 的 `backend`，`python` 指 `../../.review-venv/Scripts/python.exe`。
+应用不自动加载 .env。A 的 run-demo.ps1 默认依赖 backend/.venv，本机实际复用 ../../.review-venv；长期服务应按本机解释器路径显式导入 env 后用单 worker/8022 启动，不改共享脚本来适配 B 工作区。
 
-| 已运行命令 | 实际结果 |
+## 实际检查
+
+环境：Windows / Python 3.11.5 / 原锁定依赖 / HTTPX 0.28.1。默认 pytest 全为替身，付费测试已迁出。下表命令在 backend，python 指 ../../.review-venv/Scripts/python.exe。
+
+| 命令 | 结果 |
 | --- | --- |
-| `python -m pytest tests/providers/test_real_audio.py -q --tb=short -rs --basetemp=.pytest_cache/f2-mimo-audio-first` | **105 passed, 1 skipped, 1 warning in 2.87s** |
-| `python -m pytest tests -q --tb=short -rs --basetemp=.pytest_cache/f2-mimo-audio-full` | **404 passed, 1 skipped, 42 deselected, 1 warning in 100.73s** |
+| `python -m pytest tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/f2-b-shared-handshake` | 118 passed / 1 warning / 8.56s（独立探针的两项回归加入前） |
+| `python -m pytest tests -q --tb=short --basetemp=.pytest_cache/f2-b-integrated-all` | **485 passed / 1 failed / 42 deselected / 1 warning / 146.30s**；唯一失败为下述 A 旧阶段断言，包含 B 的 120 项通过 |
 | `python -m app.tools.export_contract --check` | OpenAPI matches `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c` |
 | `python -m app.tools.check_architecture` | Architecture OK |
 | `python -m pip check` | No broken requirements found |
+| `python -m app.tools.integration_smoke --strict` | **39 OK / 0 PENDING / 0 FAIL** |
+| `python tests/agent/smoke_network.py` | C_NETWORK_SMOKE_OK，默认 Uvicorn/mock、独立临时数据库 |
+| `python tests/providers/probe_real_tts.py --help` / 无参数 | help 正常；无参数按预期退出 2，不读 env/不发请求 |
 
-覆盖 MiMo 鉴权/assistant 全文/audio 参数、JSON/Base64/结束原因/返回模型/可选 transcript、新中文来源、200 字边界、音色限制、超时/连接失败/401/403/429/5xx、无重试/重定向、无效/截断 WAV、字节限额与流关闭、总期限实际取消、真实 MediaPort/MEDIA03 完整字节及权限。测试 PCM 仅为诊断数据，不能算真实合成或实听。唯一 warning 为既有 Starlette/httpx 弃用提示。
+新增入口回归覆盖：正常工厂与 Runtime、AI02 完整媒体字节、HTTP 等待期间独立写 UoW 可提交、未登录/越权不触发供应商、Agent 正确 real 来源/超时与超长全文降级/确认前无健康记录、显式 mock 重启保留会话。诊断 PCM/HTTP 替身均不是真实合成证据。
 
-默认验证显式设 `VITASENIOR_LIVE_TTS=0`，没有供应商网络请求。42 deselected 为既有 F0 阶段用例；1 skipped 为未启用的真实请求。严格联调脚本和独立网络烟测本轮未重跑。
+## 待 A 收口与下一步
 
-## 显式真实验证命令与未验收范围
+1. A 的公共测试 `tests/framework/test_shared_adaptation.py::test_provider_factory_separates_mock_and_real` 仍断言 B 模块不存在（RuntimeError 包含 real_tts.py）。模块现已交付，需由 A 改成有效配置可构造真实实例、非法配置拒启；B 不修改公共断言，也不把错误文案改成旧断言来掩盖阶段变化。
+2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
+3. 用户填好本机 key 后，B 显式跑一次新中文 AI02→MEDIA03 并保留音频；成功后请实际播放核对全文，再做前端/真实端口验证。本次仅检查配置存在性，TTS_API_KEY_present=false（未输出文件内容），故真实请求未运行。没有实听证据就保持未验收。
+4. A 合入 B 后更新公共测试、TTS env 示例和 FAST-05；C 的真实饮食主链继续用现成实现，不重复开发。ASR 只有 TTS 稳定且时间允许才考虑；当前延期，不接转码/新依赖。
 
-等 C/A 示例发布并正常合入后，在本机安全配置未追踪 `backend/.env`，按团队约定显式导入到进程。测试当前读取 `MIMO_API_KEY`、`MIMO_TTS_MODEL=mimo-v2.5-tts`、`MIMO_TTS_VOICE=冰糖`，可另设 `VITASENIOR_LIVE_TTS_TEXT`（新中文短文本 ≤200 字）；如最终示例命名不同，同步本测试，不添加第二套自动 env 加载。运行前用 `git check-ignore backend/.env` 确认实际文件仍被忽略，不输出/提交其内容。
-
-```powershell
-$env:VITASENIOR_LIVE_TTS = '1'
-python -m pytest tests/providers/test_real_audio.py -k live_tts -q -s -rs --basetemp=.pytest_cache/f2-mimo-live-unique
-Remove-Item Env:VITASENIOR_LIVE_TTS
-```
-
-**以上真实命令未运行**：按用户安排等待 C 的示例及本地凭据。开启后仅一个请求（以可能计费处理），缺 key/model/voice 则明确 skip。成功后在测试临时目录保留 `live-tts.wav` / `live-tts.json`：文本、时间、模型/音色、MIME、时长、字节数、SHA-256、耗时、`listened=false`；同时走 MediaPort/MEDIA03。每次用新的 basetemp 保留实听材料，勿指定运行数据目录（pytest 会清理同名旧 basetemp）。
-
-未验收：真实供应商合成与完整读文、模型/音色账号权限、AI02/Agent 真实接线及来源标记、目标手机/浏览器实听和自动播放权限、HTTPS、真实 ASR 原生录音。TTS 尚未真实稳定且没有目标设备录音，本轮不扩展 ASR、不做转码。前端初版继续文字/照片；语音失败时全文可见并明确降级。
+官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[鉴权与结束原因](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)。真实 TTS、实听、手机 HTTPS/自动播放、ASR 均未验收。

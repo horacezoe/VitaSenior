@@ -67,8 +67,9 @@ class MiMoTTS:
             raise AppError(422, "VALIDATION_ERROR", "TTS requires non-blank text without NUL characters")
         if len(text) > self.MAX_TEXT_CHARS:
             # Never slice, chunk or read only a prefix while claiming full speech.
-            raise AppError(422, "VALIDATION_ERROR", "TTS text exceeds the Demo limit; retain the full text",
-                           {"max_chars": self.MAX_TEXT_CHARS, "actual_chars": len(text)})
+            error = self._error(502, "text_too_long")
+            error.details.update(max_chars=self.MAX_TEXT_CHARS, actual_chars=len(text))
+            raise error
         if voice_id is not None and voice_id != self.voice:
             raise AppError(422, "VALIDATION_ERROR", "Only the configured TTS voice is enabled")
         # FastAPI's existing sync routes run this method in a worker thread.
