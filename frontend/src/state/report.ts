@@ -49,6 +49,7 @@ export function reportMetrics(report: Schemas["DailyReport"]) {
 }
 
 export function familyReportTip(report: Schemas["DailyReport"]) {
+  if(Object.values(report.completion.progress).every(p=>p.expected===0))return "这一天没有设定适用打卡目标，您可以与长辈了解当天情况，查看已记录的日常。";
   const missing = (Object.keys(dimensionNames) as Dimension[])
     .filter(
       (k) =>

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { reportMetrics } from "../src/state/report";
+import { reportMetrics, familyReportTip } from "../src/state/report";
 import type { Schemas } from "../src/api/client";
 const record = (id: string, source: string, payload: object) => ({
   checkin_id: id,
@@ -47,4 +47,9 @@ it("never presents an unset medication plan as 100 percent adherence", () => {
   } as unknown as Schemas["DailyReport"];
   expect(reportMetrics(r).adherence).toBeNull();
   expect(reportMetrics(r).eggs).toBe(0);
+});
+
+it("does not call a day with no applicable targets complete",()=>{
+ const r={completion:{progress:{diet:{expected:0},exercise:{expected:0},medication:{expected:0}}}} as unknown as Schemas["DailyReport"];
+ expect(familyReportTip(r)).not.toContain("齐全");expect(familyReportTip(r)).toContain("您");
 });
