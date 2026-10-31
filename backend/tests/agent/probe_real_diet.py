@@ -5,7 +5,8 @@ python tests/agent/probe_real_diet.py --image /path/to/a/demo-meal.jpg
 
 Uses a temporary DB, real default A/B/C business ports and explicit RealUnderstanding
 injection. A's production factory/startup/runtime are a separate integration gate.
-Only two model requests (one text, one image). Never prints keys/tokens/media URLs.
+Default: two model requests (text and image); --mode selects one partial probe.
+Never prints keys/tokens/media URLs.
 """
 import argparse
 import json
@@ -29,9 +30,10 @@ from app.seed import framework_seed
 
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image', type=Path, required=True, help='A non-private demo meal photograph')
+    parser.add_argument('--image', type=Path, help='A non-private demo meal photograph; required for image/both mode')
+    parser.add_argument('--mode', choices=['both', 'text', 'image'], default='both', help='Partial probes do not count as both FAST-02 inputs')
     parser.add_argument('--env-file', type=Path, help='Explicitly read local CHAT_* settings; application does not auto-load this file')
-    parser.add_argument('--live', action='store_true', help='Explicitly enable exactly two real model requests')
+    parser.add_argument('--live', action='store_true', help='Explicitly enable the selected one or two real model requests')
     args = parser.parse_args()
     if args.env_file:
         allowed = {'CHAT_API_KEY', 'CHAT_BASE_URL', 'CHAT_MODEL', 'LIVE_UNDERSTANDING'}
@@ -52,14 +54,18 @@ def run():
     missing = [name for name in ['CHAT_API_KEY', 'CHAT_BASE_URL', 'CHAT_MODEL'] if not os.getenv(name)]
     if missing:
         parser.error('Missing configuration: ' + ', '.join(missing))
-    if args.image.stat().st_size > MAX_IMAGE_BYTES:
-        parser.error('The demo meal photograph must be at most 5 MiB')
-    raw = args.image.read_bytes()
-    mime = ('image/png' if raw.startswith(b'\x89PNG\r\n\x1a\n') else
-            'image/jpeg' if raw.startswith(b'\xff\xd8\xff') else
-            'image/webp' if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP' else None)
-    if mime is None:
-        parser.error('Use a PNG, JPEG or WebP demo photograph')
+    raw, mime = None, None
+    if args.mode != 'text':
+        if args.image is None:
+            parser.error('--image is required for image/both mode')
+        if args.image.stat().st_size > MAX_IMAGE_BYTES:
+            parser.error('The demo meal photograph must be at most 5 MiB')
+        raw = args.image.read_bytes()
+        mime = ('image/png' if raw.startswith(b'\x89PNG\r\n\x1a\n') else
+                'image/jpeg' if raw.startswith(b'\xff\xd8\xff') else
+                'image/webp' if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP' else None)
+        if mime is None:
+            parser.error('Use a PNG, JPEG or WebP demo photograph')
     provider = RealUnderstanding(api_key=os.environ['CHAT_API_KEY'], base_url=os.environ['CHAT_BASE_URL'],
                                  model=os.environ['CHAT_MODEL'])
     temporary_parent = BACKEND / '.pytest_cache' / 'c-f2-live'
@@ -78,7 +84,8 @@ def run():
                         code = response.json().get('error', {}).get('code', 'UNKNOWN')
                     except ValueError:
                         code = 'NON_JSON_RESPONSE'
-                    raise RuntimeError(f'{method} {path.split("?")[0]}: {response.status_code} {code}')
+                    upstream = response.json().get('error', {}).get('details', {}).get('upstream_status') if code != 'NON_JSON_RESPONSE' else None
+                    raise RuntimeError(f'{method} {path.split("?")[0]}: {response.status_code} {code}; upstream_status={upstream}')
                 return response.json()['data']
             headers = {}
             for role in ['elder', 'bound_child']:
@@ -88,11 +95,15 @@ def run():
                     'challenge_id': challenge['challenge_id'], 'code': '123456'})
                 headers[role] = {'Authorization': 'Bearer '+login['access_token']}
             elder = seed['elder']['elder_id']
-            asset = checked('POST', '/api/v1/media', 201,
-                headers={**headers['elder'], 'Idempotency-Key': 'live-upload'},
-                data={'elder_id': elder, 'purpose': 'meal'}, files={'file': ('demo-meal', raw, mime)})
-            for mode, text, images in [('text', '今天早餐吃了鸡蛋和全麦面包，请准备记录', []),
-                                       ('image', '这是今天午餐的餐食照片，请识别并准备记录', [asset['asset_id']])]:
+            requests = []
+            if args.mode != 'image':
+                requests.append(('text', '今天早餐吃了鸡蛋和全麦面包，请准备记录', []))
+            if args.mode != 'text':
+                asset = checked('POST', '/api/v1/media', 201,
+                    headers={**headers['elder'], 'Idempotency-Key': 'live-upload'},
+                    data={'elder_id': elder, 'purpose': 'meal'}, files={'file': ('demo-meal', raw, mime)})
+                requests.append(('image', '这是今天午餐的餐食照片，请识别并准备记录', [asset['asset_id']]))
+            for index, (mode, text, images) in enumerate(requests):
                 start = time.monotonic()
                 body = {'elder_id': elder, 'client_turn_id': 'live-'+mode, 'text': text, 'image_asset_ids': images}
                 turn_headers = {**headers['elder'], 'Idempotency-Key': 'live-'+mode}
@@ -103,7 +114,7 @@ def run():
                     raise RuntimeError(mode+': inaccurate provider or premature confirmation')
                 before = checked('GET', f'/api/v1/elders/{elder}/checkins?date={local_date(app.state.clock.now())}',
                                  headers=headers['elder'])
-                assert len(before['items']) == (0 if mode == 'text' else 1), 'A pending action wrote a health fact'
+                assert len(before['items']) == index, 'A pending action wrote a health fact'
                 replay = checked('POST', '/api/v1/agent/turns', 201, headers=turn_headers, json=body)
                 assert replay == turn
                 path = '/api/v1/agent/actions/'+turn['actions'][0]['action_id']+'/decision'
@@ -121,7 +132,8 @@ def run():
                 print(json.dumps({'mode': mode, 'model': provider.model, 'provider': turn['providers']['chat'],
                     'elapsed_ms': int((time.monotonic()-start)*1000), 'confirmed_once': True,
                     'record_source': record['source'], 'same_record_on_child_dashboard': True}, ensure_ascii=False))
-    print('C_LIVE_DIET_PROBE_OK: explicit real provider, temporary DB, two model requests; A factory gate separate')
+    marker = 'C_LIVE_DIET_PROBE_OK' if args.mode == 'both' else 'C_LIVE_DIET_'+args.mode.upper()+'_OK'
+    print(marker+': explicit real provider, temporary DB; A factory gate separate')
 
 
 if __name__ == '__main__':
