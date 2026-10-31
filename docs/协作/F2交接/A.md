@@ -11,19 +11,24 @@
 | 可运行样例 | `backend/app/tools/demo_walkthrough.py` | ✅ `python -m app.tools.demo_walkthrough [--base-url ...]`，逐条打印请求/响应，`WALKTHROUGH_OK` |
 | 最小配置/工厂共享提交 | `app/core/config.py`、`app/composition.py`、`app/main.py` | ✅ 已推 `f2/platform`，B/C 直接 merge 即可 |
 
-### 1.1 统一复验（合入 B `4ddf216` 与 C `bb37744` 之后）
+### 1.1 统一复验（合入 B `3195fc0`：TTS + ASR，C `bb37744`）
 
-- 合并提交 `f542fb4`（B 的 MiMo TTS + C 的 Flash 轻量理解，零冲突）。
-- `pytest tests -q` → **489 passed, 42 deselected**；`integration_smoke --strict` → **39/0/0**；
+- 合并提交 `3195fc0`（B 的 MiMo TTS/ASR + C 的 Flash 轻量理解，零冲突）。
+- `pytest tests -q` → **527 passed, 42 deselected**；`integration_smoke --strict` → **39/0/0**；
   `export_contract --check` 未变；`Architecture OK`。
-- A 修正了自己那条过期断言（原来断言"`real_tts.py` 不存在就报错"）；B 的适配器现在存在，
-  改为断言"能构建出 `name=="real"` 的实例、`providers.tts=="real"`"，并保留"缺配置就拒绝启动"。
-- 真实环境复验（`run-demo.ps1` + `backend/.env`，真实 uvicorn）：`providers =
-  {chat: real, asr: mock, tts: real}`；`AI02` 真实音频；`AGENT01` 真实文字识别 201。
-- `run-demo.ps1` 现在会把 `PUBLIC_BASE_URL` 的端口对齐到 `-Port`，否则媒体 `content_url` 会指向
-  错误端口（前端/手机用 LAN IP 时同理，必须让这个变量与实际访问地址一致）。
-- **未运行** C 的 `tests/agent/smoke_mimo_network.py`：需要 `--image <真实餐食照片>`，A 没有可用素材；
-  照片识别证据仍以 C 的探测为准。
+- 三模态真实装配均已实测（`run-demo.ps1` + `backend/.env`，真实 uvicorn）：
+
+| 能力 | 实测 |
+| --- | --- |
+| chat | `AGENT01` 真实文字 201 / 9.6s，正确得出午餐+三种食物 |
+| tts | `AI02` 200 / 1.7s，`provider=real`、`is_mock=False`、`audio/wav` 84 KB / 1760 ms |
+| asr | `AI01` 200 / 1.0s，`provider=real`、`is_mock=False`，13.6s PCM WAV → 正确转写 |
+| runtime | `providers = {chat: real, asr: real, tts: real}`，45 项能力 true |
+- A 修正了自己两条过期断言（"`real_tts.py` 不存在就报错"、"ASR 必须拒绝 real"）；现在三个模态
+  都可显式切 real，缺 `*_API_KEY/*_BASE_URL/*_MODEL` 一律拒启，不会半 mock 半 real。
+- `run-demo.ps1` 会把 `PUBLIC_BASE_URL` 的端口对齐到 `-Port`，否则媒体 `content_url` 指向错误端口。
+- **未验收**：Edge 实际麦克风/摄像头采集、句末截图、真机播放（前端后续）；C 的
+  `smoke_mimo_network.py` 需要真实餐食照片，A 无素材，照片证据仍以 C 的探测为准。
 
 **Provider 工厂（本轮唯一的共享依赖）**：只切换 TTS，不做通用 provider 平台。
 
@@ -47,6 +52,7 @@ providers(settings) -> {"chat": settings.chat_provider, "asr": "mock", "tts": se
 | FAST-03 | 提案播报保留 F1 全文 fixture；无完整音频不计时 | 有匹配语音 → 播报后 60 秒窗口生效；无匹配 → 只有文字、`auto_apply_at` 恒 null | ✅ 回归已覆盖，B 侧 NOTI03 已验 |
 | FAST-04 | 完整主链（建档→绑定→饮食确认→看板/日报） | `integration_smoke --strict` 39/0/0 | ✅ |
 | FAST-05 | 真实 TTS 接入且标识准确 | `TTS_PROVIDER=real`、`providers.tts=="real"`、`AI02` 返回真实音频（`is_mock=false`、可播放字节） | ✅ 已由 A 实测：`AI02` 200 / 1.7s，`provider=real`、`is_mock=False`、`audio/wav` 84,524 B / 1760 ms，取回字节以 `RIFF` 开头；B 侧另有用户实听确认 |
+| FAST-06 | 真实 ASR 生产装配（用户追加） | `ASR_PROVIDER=real`、`providers.asr=="real"`、`AI01` 返回真实转写 | ✅ A 已装配并实测：`AI01` 200 / 1.0s，`provider=real`、`is_mock=False`，13.6s PCM WAV → 正确转写；Edge 实际采集未验收 |
 
 标签策略：FAST-01–05 全绿后发布新标签（`f2-demo-v1` → `f2-demo-v2` → 本轮 `f2-demo-v3`），
 **不移动 `f1-integrated-v1`**。未通过项按编号写在下表，不用"部分通过"含混表述。

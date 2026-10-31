@@ -56,8 +56,13 @@ def test_provider_factory_separates_mock_and_real(tmp_path):
     real_chat, _, _ = build_agent_providers(real)
     assert type(real_chat).__name__ == "RealUnderstanding"
     assert providers(real)["chat"] == "real"
-    # ASR is deferred this round; declaring it real is rejected.
-    with pytest.raises(ValueError, match="ASR must stay mock"):
+    # Real ASR builds B's adapter and reports itself; missing config still refuses.
+    real_asr = Settings(data_dir=tmp_path, asr_provider="real", asr_api_key="k",
+                        asr_base_url="https://api.xiaomimimo.com/v1", asr_model="mimo-v2.5-asr")
+    _, asr_real, _ = build_agent_providers(real_asr)
+    assert getattr(asr_real, "name", None) == "real"
+    assert providers(real_asr)["asr"] == "real"
+    with pytest.raises(ValueError, match="ASR_PROVIDER=real requires"):
         Settings(data_dir=tmp_path, asr_provider="real")
     # Real TTS builds B's adapter and reports itself, now that the module exists.
     # B pins the endpoint to the official MiMo root (no fake hosts, no network here).

@@ -18,6 +18,11 @@ class Settings:
     chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", ""))
     chat_timeout_seconds: float = 20.0
     asr_provider: str = field(default_factory=lambda: os.getenv("ASR_PROVIDER", "mock"))
+    # Real ASR (B's adapter). Same policy as chat/TTS: empty by default and
+    # ASR_PROVIDER=real refuses to boot unless the three connection fields are set.
+    asr_api_key: str = field(default_factory=lambda: os.getenv("ASR_API_KEY", ""))
+    asr_base_url: str = field(default_factory=lambda: os.getenv("ASR_BASE_URL", ""))
+    asr_model: str = field(default_factory=lambda: os.getenv("ASR_MODEL", ""))
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "mock"))
     # Real speech (B's adapter). Same policy as chat: empty by default, and
     # TTS_PROVIDER=real refuses to boot unless the three connection fields are set.
@@ -41,8 +46,10 @@ class Settings:
             raise ValueError("F0 supports development/demo/test environments only")
         if self.app_timezone != "Asia/Hong_Kong":
             raise ValueError("Business timezone is frozen to Asia/Hong_Kong")
-        if self.asr_provider != "mock":
-            raise ValueError("F2 allows real providers for chat/TTS only; ASR must stay mock")
+        if self.asr_provider not in {"mock", "real"}:
+            raise ValueError("ASR_PROVIDER must be 'mock' or 'real'")
+        if self.asr_provider == "real" and not all((self.asr_api_key, self.asr_base_url, self.asr_model)):
+            raise ValueError("ASR_PROVIDER=real requires ASR_API_KEY, ASR_BASE_URL and ASR_MODEL")
         if self.chat_provider not in {"mock", "real"}:
             raise ValueError("CHAT_PROVIDER must be 'mock' or 'real'")
         if self.chat_provider == "real" and not all((self.chat_api_key, self.chat_base_url, self.chat_model)):
