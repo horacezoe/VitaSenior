@@ -1,6 +1,6 @@
 # F2 B：MiMo TTS 握手与验收
 
-2026-10-31（Asia/Hong_Kong）。**TTS 正常工厂/AI02/媒体取回与用户实听已通过；按用户后续要求继续推进 ASR，独立 WAV 适配和一次真实供应商探测已通过，生产装配与 Edge 采集尚待接线。** 三个模态统一 MiMo，没有引入转码或新依赖。
+2026-10-31（Asia/Hong_Kong）。**已正常同步并核验 A 的 f2-demo-v4：chat/ASR/TTS 三模态生产装配均已完成，后端音频部分已收口；剩正式 Edge 界面的采集、句末截图和播放联调。** TTS 已有用户实听，ASR 已有 B 独立 WAV 与 A 正常 Uvicorn/AI01 的真实探测；Edge 实际采集尚未验收。三个模态统一 MiMo，无新增转码或依赖。
 
 ## 基线与协作进度
 
@@ -8,6 +8,7 @@
 - 已正常合入 A `origin/f2/platform@24debddce9f5f2a88ee68f56f6245f7bba5b4c95`，合并提交 `41906d226adef26cbbac58ac6931dd5b1e86d1d8`，零冲突，包含 A 的 `9f46203` 握手和 C 的 `96177dc`。
 - 真实 TTS/实听之后，又正常合入 C `backend/f2-understanding@bb37744`，合并提交 `fe9b2d7a66efb3535a5c5aa2ad3cfa4d2be18f17`，零冲突；包含 C 的 Flash 非思考模式补丁及其回归，B 未自行编辑 C 文件。同步时 A 的远端仍为 24debdd，旧公共断言尚未更新。
 - ASR 独立探测通过后，正常合入 A `origin/f2/platform@0d9d9cc`（`f2-demo-v3`）。A 已集成并实测真实 chat+TTS，修复旧“real_tts 模块不存在”断言；该历史测试阻断已关闭。ASR 配置/工厂仍为 mock，后续由 A 单独接线，不移动既有标签。
+- 最新已快进到 `origin/f2/platform@582e304ef62c831ba7d825654d159b5dfa0ce19f`（`f2-demo-v4`），A 新增真实 ASR 配置/装配/Runtime 并更新公共测试。上述“ASR 仍 mock/待 A 接线”仅为历史状态。B 本次没有编辑共享文件、重复调用付费模型或重打标签。
 - C 最新交接报告：正常工厂/Uvicorn 的真实文字、餐食照片、确认落库、看板/日报、重启及显式 mock 回退均通过；A 已合入复验。此处是 A/C 的证据，不冒充 B 已重复发起供应商请求。
 - B 自己的改动仅 `providers/real_audio.py`、用户后续明确新增的 `providers/real_tts.py`、`tests/providers/test_real_audio.py`、独立 `tests/providers/probe_real_tts.py` / `probe_real_asr.py` 和本文件。公共/其他领域文件只来自正常 merge，没有由 B 编辑。
 - 测试用临时 SQLite；B 本机演示数据 `backend/data/f2-audio-b`、默认数据库 `vitasenior.sqlite3`，端口 8022。没有操作他人的运行库、重置历史或移动标签。
@@ -85,10 +86,18 @@ python tests/providers/probe_real_tts.py --env-file .env --live
 
 ## 待 A 收口与下一步
 
-1. TTS 旧公共断言已由 A 在 0d9d9cc 更新并正常合入，历史 1 failed 不再是当前阻断；B 未改公共测试。新的 ASR 生产接线仍需要 A 同步 ASR 的阶段配置/测试。
+1. TTS 和 ASR 的旧阶段断言均已由 A 更新；B 未修改公共测试。真实 ASR 已正常装配，历史 1 failed 和 ASR 配置阻断均已关闭。
 2. A 的 `Settings.tts_timeout_seconds` 当前为固定字段 20.0，尚未读取 TTS_TIMEOUT_SECONDS 环境变量；显式构造 Settings 时能传 timeout。若承诺该可选环境变量，由 A 在配置层处理，B 不另读 env。默认 20 秒不受影响。
 3. 新中文 AI02→MEDIA03 与该文件人工实听已通过；下一步仅做前端/真实端口集成验证，不为重复验同一文件扩大供应商请求数量。
-4. TTS 后续以 A 的集成复验为准；用户追加 ASR 后，待办改为 A 装配真实 ASR、前端完成一句一轮的音视频采集。C 的真实饮食主链继续复用，不重复实现理解器。
+4. A 的三模态后端集成已完成；下一项是正式前端完成一句一轮的音视频采集、图文 Agent 与播报联调。C 现有真实饮食流程继续复用。
+
+### B 对 f2-demo-v4 的独立核验
+
+- 已核对 A 的配置、工厂、Runtime 与最新交接：A 记录正常 Uvicorn 下 chat/asr/tts 全 real，AI01 真实转写约 1.0 秒；A 全量 527 passed / 42 deselected、严格联调 39/0/0。这些供应商网络结果是 A 的证据，B 本次没有重复计费调用。
+- B 本机实际运行 `python -X utf8 -m pytest tests/framework/test_shared_adaptation.py tests/agent/test_f2_configured_startup.py tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/b-v4-assembly-review` → **172 passed / 1 warning / 11.50s**。
+- 另用临时 SQLite、实际 Settings/工厂装配三模态 real，仅替换 ASR HTTP transport：真实登录→Runtime 全 real→MEDIA01→AI01 来源/转写均一致，输出 **B_V4_OFFLINE_FACTORY_AI01_OK**；无 provider/service 注入、无付费请求。
+- 契约与架构检查通过，OpenAPI hash 仍为 `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`。本次未重复跑全量 527 项或真实浏览器采集。
+- A 交接中仍有少量“ASR 固定 mock/等待 B”的历史段落；应以其最新 §1.1、FAST-06、实际代码及本节为准。该文档清理项不代表接线仍未完成。
 
 ## 用户追加 ASR：独立接口已通，待产品接线
 
@@ -119,9 +128,9 @@ result = asr.transcribe(wav_bytes, "audio/wav")  # 无 Session，退出读 UoW �
 
 ### A / C / 前端接线
 
-1. **A**：当前 Settings 仍强制 ASR_PROVIDER=mock，工厂仍构造 MockASR。请集中新增 ASR_PROVIDER=real 的显式参数/缺配置拒启，构造上述 MiMoASR，Runtime 从实际实例报告；同步公共测试中“ASR 一定拒绝 real”的阶段断言。B 没有修改 core/main/composition 或另建工厂。建议配置名 ASR_API_KEY / ASR_BASE_URL / ASR_MODEL，由 A 最终冻结。
-2. **C**：现有 flow 已能接 `ASRProvider.transcribe` 并使用真实 provenance。A 装配后，验证 audio_asset_id + image_asset_ids 一起送 AGENT01：先 ASR，再与该帧共同理解；保留 45 秒总预算和鉴权复验、确认前不写业务事实。若前端先走 AI01 展示/修正转写，再用 text+图片调用 Agent，则已有 text 时不重复 ASR。
+1. **A 已完成**：`ASR_PROVIDER=mock|real`，real 时显式要求 ASR_API_KEY / ASR_BASE_URL / ASR_MODEL；工厂构造 MiMoASR，Runtime 报告实际模式，公共测试已同步。B 没有修改 core/main/composition 或另建工厂。
+2. **C / 前端联调**：现有 flow 已接 `ASRProvider.transcribe` 并使用真实 provenance。前端接好后验证 audio_asset_id + image_asset_ids 一起送 AGENT01：先 ASR，再与该帧共同理解；保留 45 秒总预算和鉴权复验、确认前不写业务事实。若前端先走 AI01 展示/修正转写，再用 text+图片调用 Agent，则已有 text 时不重复 ASR。
 3. **前端**：说完话那一刻固定一帧，WAV 与图片通过既有 MEDIA01 上传，再提交同一轮 Agent；持续预览不等于持续上传视频。录音格式应在实际 Edge 验证：可考虑直接采集 PCM 并封装 WAV，避免服务器端 WebM 转码；不能假定默认 MediaRecorder 就返回 WAV。若最终只产 WebM 且需要转码，按原约定重新评估范围，不静默改后缀。TTS 播放与下一轮收音的回授控制也需随正式界面联调。
 4. **用户**：正式界面接好后，在 Edge 正常说一句“今天午餐吃了青菜、豆腐和米饭，请帮我记录。”即可验收。现在无需单独录音、安装软件或管理测试目录。
 
-官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[MiMo ASR 协议与格式](https://mimo.mi.com/docs/zh-CN/api/audio/Speech-Recognition)、[浏览器录制格式选择](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder/MediaRecorder)。真实 TTS/媒体字节与本机实听已验；ASR 目前只验独立 WAV 接口，生产装配、Edge 录音、摄像头预览/句末截图与真实界面串联尚未验收。
+官方协议参考：[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis)、[MiMo ASR 协议与格式](https://mimo.mi.com/docs/zh-CN/api/audio/Speech-Recognition)、[浏览器录制格式选择](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder/MediaRecorder)。真实 TTS/媒体字节与本机实听已验；ASR 独立接口及正常应用装配已验；Edge 录音、摄像头预览/句末截图与真实界面串联尚未验收。
