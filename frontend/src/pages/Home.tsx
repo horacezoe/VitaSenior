@@ -322,16 +322,19 @@ export function ChildNav() {
 
 export function HealthPanel() {
   return (
-    <Page title="健康日报">
-      <DailyReport embedded />
+    <Page title="我的健康">
+      <DailyReport embedded view="health" />
+      <section className="section" aria-label="健康日历与日报">
+        <h2>健康日历与日报</h2>
+        <Calendar embedded />
+      </section>
       <div className="menu-card section">
         <MenuLink
           to="/profile"
           icon={UserRound}
-          title="个人档案"
+          title="我的档案"
           text="档案、用药计划与提醒设置"
         />
-        <MenuLink to="/notifications" icon={Bell} title="家人留言与提醒" />
       </div>
     </Page>
   );

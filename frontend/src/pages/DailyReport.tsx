@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import ReportSpeech from "../components/ReportSpeech";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -23,8 +24,10 @@ import { reportMetrics, dimensionNames, type Dimension } from "../state/report";
 
 export default function DailyReport({
   embedded = false,
+  view = "date",
 }: {
   embedded?: boolean;
+  view?: "date" | "health";
 }) {
   const { date, dimension } = useParams(),
     { api, elderId, role } = useSession(),
@@ -199,7 +202,20 @@ export default function DailyReport({
             </>
           ) : (
             <>
-              {role === "child" ? (
+              {view === "health" ? (
+                <Card className="section">
+                  <h2>AI管家温情播报</h2>
+                  <p>
+                    {r.insights?.warm_message ||
+                      (report.loading
+                        ? "正在整理今天的日常，先看看下方真实打卡记录吧。"
+                        : "AI播报暂不可用，请查看下方真实记录。")}
+                  </p>
+                  {r.insights && (
+                    <ReportSpeech text={r.insights.warm_message} />
+                  )}
+                </Card>
+              ) : role === "child" ? (
                 <Card>
                   <span className="eyebrow">长辈基础信息</span>
                   <h2>{r.person?.display_name || "家人"}</h2>
@@ -209,7 +225,9 @@ export default function DailyReport({
                       : ""}
                     {r.person?.conditions?.length
                       ? r.person.conditions.join("、")
-                      : r.person ? "未记录慢病信息" : "档案信息加载中…"}
+                      : r.person
+                        ? "未记录慢病信息"
+                        : "档案信息加载中…"}
                   </p>
                   <p className="form-hint">健康风险评级：尚未进行专业评估</p>
                 </Card>
@@ -225,28 +243,25 @@ export default function DailyReport({
                   </h2>
                 </section>
               )}
-              <Card className="section">
-                <h2>🥚 今日鸡蛋积分</h2>
-                <strong className="report-eggs">{m.eggs} 枚</strong>
-                <div className="report-meter">
-                  <label>当日有效打卡核对 · 任务目标{m.expected}项</label>
-                  <progress
-                    value={m.eggs}
-                    max={Math.max(1, m.expected, m.eggs)}
-                  />
-                </div>
-                <small>
-                  演示样例不计入；这里是当日核对数，不是跨设备累计余额。
-                </small>
-              </Card>
-              {role === "child" && (
-                <Card className="section">
-                  <h2>AI管家温情播报</h2>
-                  <p>{r.insights?.warm_message || (report.loading?"正在整理今天的日常，先看看下方真实打卡记录吧。":"AI播报暂不可用，请查看下方真实记录。")}</p>
-                  {r.insights && (
-                    <ReportSpeech text={r.insights.warm_message} />
-                  )}
-                </Card>
+              {view === "health" ? (
+                <CumulativeEggs today={m.eggs} />
+              ) : (
+                role === "child" && (
+                  <Card className="section">
+                    <h2>🥚 当日鸡蛋积分</h2>
+                    <strong className="report-eggs">{m.eggs} 枚</strong>
+                    <div className="report-meter">
+                      <label>当日有效打卡核对 · 任务目标{m.expected}项</label>
+                      <progress
+                        value={m.eggs}
+                        max={Math.max(1, m.expected, m.eggs)}
+                      />
+                    </div>
+                    <small>
+                      演示样例不计入；这里是当日核对数，不是跨设备累计余额。
+                    </small>
+                  </Card>
+                )
               )}
               <h2 className="section">三大打卡记录</h2>
               <div className="report-dimensions">
@@ -276,12 +291,10 @@ export default function DailyReport({
                   );
                 })}
               </div>
-              <p className="note-card">
-                {r.insights?.reminder ||
-                  "按自己的节奏照顾好今天，暂时没有记录的事也可以慢慢补充。"}
-              </p>
-              {role === "elder" && r.insights && (
-                <ReportSpeech text={r.insights.reminder} />
+              {role === "child" && (
+                <p className="note-card">
+                  {r.insights?.reminder || "按自己的节奏照顾好今天。"}
+                </p>
               )}
             </>
           )}
@@ -290,7 +303,9 @@ export default function DailyReport({
     </>
   );
   return embedded ? (
-    <section aria-label="今日健康日报">{content}</section>
+    <section aria-label={view === "health" ? "我的健康概览" : "当日健康日报"}>
+      {content}
+    </section>
   ) : (
     <Page
       title={kind ? `${dimensionNames[kind]}打卡记录` : "健康日报"}
@@ -298,5 +313,31 @@ export default function DailyReport({
     >
       {content}
     </Page>
+  );
+}
+
+function CumulativeEggs({ today }: { today: number }) {
+  const { ledger } = useData();
+  const [total, setTotal] = useState(0);
+  useEffect(() => {
+    const update = () =>
+      setTotal(ledger?.read().filter((p) => p.played || !p.queued).length || 0);
+    update();
+    window.addEventListener("vitasenior:rewards", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("vitasenior:rewards", update);
+      window.removeEventListener("storage", update);
+    };
+  }, [ledger]);
+  return (
+    <Card className="section">
+      <h2>🥚 累计鸡蛋积分</h2>
+      <strong className="report-eggs">{total} 枚</strong>
+      <p>今日积累：{today} 枚</p>
+      <small>
+        累计与首页鸡蛋篮子一致，按本设备已核对记录保存；今日数按当日有效记录核对。
+      </small>
+    </Card>
   );
 }
