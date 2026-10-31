@@ -205,7 +205,6 @@ export default function Settings({ demoMode = false }: { demoMode?: boolean }) {
       )}
       {!demoMode && (
         <>
-          <MenuLink to="/settings/demo" icon={Settings2} title="演示设置" />
           {role === "child" && (
             <Card>
               <Field label="切换正在关心的家人">
@@ -285,7 +284,7 @@ function IncentiveRules() {
       </h2>
       {open && (
         <p role="tooltip" className="note-card">
-          每次新的有效打卡奖励一枚鸡蛋，纠正与重试不重复奖励。当前为本设备核对的记录，跨设备余额尚未统一；取消暂不扣回。
+          膳食、运动、用药：每条经服务端确认的新有效打卡获得1枚鸡蛋。演示样例不计入；重复提交、同餐替换与纠正不重复奖励。鸡蛋在首页回收动画后仍保留，取消记录暂不扣回。当前余额为本设备核对结果，换设备或清空存储不保证完整累计。
         </p>
       )}
     </section>

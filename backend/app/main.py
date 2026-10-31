@@ -13,7 +13,7 @@ from app.core.ids import new_id
 from app.core.idempotency import Idempotency
 from app.core.ratelimit import RateLimiter
 from app.core.uow import UnitOfWork
-from app.composition import build_agent_providers, compose, compose_identity, declared_capabilities, providers
+from app.composition import build_report_writer, build_agent_providers, compose, compose_identity, declared_capabilities, providers
 from app.contracts.bundle import ServiceBundle
 from app.scheduler import Scanner
 from app.services.agent_service import AgentService
@@ -55,6 +55,7 @@ def create_app(settings: Settings | None = None, *, clock: Clock | None = None, 
     # stay mock; TTS is the only provider F2 may switch to a real implementation.
     app.state.agent = AgentService(clock, app.state.services, app.state.services.memory)
     app.state.agent_chat, app.state.agent_asr, app.state.agent_tts = build_agent_providers(settings)
+    app.state.report_writer = build_report_writer(settings)
     def settle_due_proposals(now):
         """One tick, one transaction: B's deterministic reminder scan creates the due
         notifications, then A settles expired proposal windows from SQLite. Both run

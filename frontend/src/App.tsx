@@ -1,3 +1,4 @@
+import DailyReport from "./pages/DailyReport";
 import Shop from "./pages/Shop";
 import { useEffect, useState } from "react";
 import {
@@ -71,6 +72,22 @@ function MobileApp() {
             />
           }
         />
+        <Route
+          path="/daily/:date"
+          element={
+            <Guard>
+              <DailyReport key={location.key} />
+            </Guard>
+          }
+        />
+        <Route
+          path="/daily/:date/:dimension"
+          element={
+            <Guard>
+              <DailyReport key={location.key} />
+            </Guard>
+          }
+        />
         <Route path="/login" element={<Login />} />
         <Route
           path="/shop"
@@ -81,7 +98,10 @@ function MobileApp() {
           }
         />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/settings/demo" element={<Settings demoMode />} />
+        <Route
+          path="/settings/demo"
+          element={<Navigate replace to="/settings" />}
+        />
         <Route
           path="/elder"
           element={

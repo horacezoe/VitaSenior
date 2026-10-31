@@ -189,7 +189,24 @@ class AttentionItem(DTO):
     detail: str
     source_ids: list[str]
     can_remind: bool
+class DailyInsights(DTO):
+    warm_message: str = Field(min_length=1, max_length=200)
+    elder_praise: str = Field(min_length=1, max_length=120)
+    reminder: str = Field(min_length=1, max_length=120)
+    diet_advice: str = Field(min_length=1, max_length=240)
+    exercise_advice: str = Field(min_length=1, max_length=240)
+    medication_advice: str = Field(min_length=1, max_length=240)
+class ReportPerson(DTO):
+    display_name: str
+    birth_date: date | None = None
+    conditions: list[str] = Field(default_factory=list)
+    allergies: list[str] = Field(default_factory=list)
+
 class DailyReport(DTO):
+    medication_plans: list[MedicationPlan] = Field(default_factory=list)
+    person: ReportPerson | None = None
+    insights: DailyInsights | None = None
+    ai_status: Literal["not_requested", "not_configured", "ready", "unavailable"] = "not_requested"
     elder_id: str
     date: date
     completion: CalendarDay

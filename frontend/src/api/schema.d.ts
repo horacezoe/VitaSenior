@@ -1,5 +1,5 @@
 // Generated from backend/contracts/openapi.json. Do not edit.
-// SHA-256 6c1e8d96bfe881605d5d7ffd99a4da93b52d0682c01dbda4be9f9629d8e7f500
+// SHA-256 3241bf18af34f1930270489b24f9d5ec181635ad9f2ed89c7f3894d4554f3d1c
 export interface components {
   schemas: {
     "ASRResult": { "is_mock": boolean; "language": string; "provider": string; "transcript": string };
@@ -36,7 +36,8 @@ export interface components {
     "ConfirmWrite": { "draft_id": string; "expected_version": number; "medication_plans": Array<components['schemas']["MedicationPlanWrite-Input"]>; "profile": components['schemas']["ProfileFields"] };
     "CreatePlanAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["MedicationPlanWrite-Output"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "create_medication_plan" };
     "CreatePlanProposal": { "base_version"?: null; "operation": "create"; "patch": components['schemas']["MedicationPlanWrite-Input"]; "reason"?: string; "target_id"?: null; "target_type": "medication_plan" };
-    "DailyReport": { "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder_id": string; "records": components['schemas']["Records"]; "summary_text": string; "updated_at": string };
+    "DailyInsights": { "diet_advice": string; "elder_praise": string; "exercise_advice": string; "medication_advice": string; "reminder": string; "warm_message": string };
+    "DailyReport": { "ai_status"?: "not_requested" | "not_configured" | "ready" | "unavailable"; "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder_id": string; "insights"?: (components['schemas']["DailyInsights"] | null); "medication_plans"?: Array<components['schemas']["MedicationPlan"]>; "person"?: (components['schemas']["ReportPerson"] | null); "records": components['schemas']["Records"]; "summary_text": string; "updated_at": string };
     "DailyTask": { "cancelled"?: boolean; "category": components['schemas']["Category"]; "checkin_ids": Array<string>; "completion": "pending" | "completed" | "not_taken"; "date": string; "dose_display": (string | null); "due_at": (string | null); "plan_id": (string | null); "plan_version": (number | null); "slot_key": string; "task_id": string; "title": string; "waiting_for_meal": boolean };
     "Dashboard": { "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder": components['schemas']["ElderSummary"]; "memory_summary": string; "pending_tasks": Array<components['schemas']["DailyTask"]>; "provider_mode": "mock" | "real"; "recommendations": Array<string>; "risk_assessment": components['schemas']["RiskAssessment"]; "today_records": components['schemas']["Records"] };
     "DeactivatePlanProposal": { "base_version": number; "operation": "deactivate"; "patch": components['schemas']["EmptyPatch"]; "reason"?: string; "target_id": string; "target_type": "medication_plan" };
@@ -148,6 +149,7 @@ export interface components {
     "ReminderSettings": { "daily_summary": components['schemas']["TimedReminder"]; "exercise": components['schemas']["TimedReminder"]; "meals": Array<components['schemas']["MealReminder"]>; "version": number; "voice_enabled": boolean };
     "Reply": { "audio_asset_id"?: (string | null); "text": string };
     "ReportAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["ReportPreview"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "query_report" };
+    "ReportPerson": { "allergies"?: Array<string>; "birth_date"?: (string | null); "conditions"?: Array<string>; "display_name": string };
     "ReportPreview": { "date": string };
     "RiskAssessment": { "level"?: null; "status"?: "not_configured" };
     "Role": "elder" | "child";

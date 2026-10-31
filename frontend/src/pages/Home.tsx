@@ -1,3 +1,4 @@
+import DailyReport from "./DailyReport";
 import Calendar from "./Calendar";
 import { Link, Navigate } from "react-router-dom";
 import {
@@ -322,7 +323,7 @@ export function ChildNav() {
 export function HealthPanel() {
   return (
     <Page title="健康日报">
-      <Calendar embedded />
+      <DailyReport embedded />
       <div className="menu-card section">
         <MenuLink
           to="/profile"

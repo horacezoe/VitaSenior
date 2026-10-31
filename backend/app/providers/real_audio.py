@@ -33,7 +33,7 @@ class MiMoTTS:
     is_mock = False
     MODEL = "mimo-v2.5-tts"
     DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
-    BOY_VOICE = "清澈温暖的小男孩声音，普通话发音清晰，亲切自然，语速稍慢，耐心陪伴老人，不尖锐、不夸张。"
+    BOY_VOICE = '男性少儿7-10岁，清脆稚嫩童声，普通话标准吐字清晰，活泼可爱热情，语速适中，语调明亮，自然讲述风格。'
     ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions"
     MAX_TEXT_CHARS = 200
     MAX_AUDIO_BYTES = 15 * 1024 * 1024

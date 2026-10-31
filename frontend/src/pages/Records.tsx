@@ -208,8 +208,11 @@ function RecordEditor({
     { refresh, observe } = useData(),
     navigate = useNavigate(),
     action = useAction();
+  const [selection] = useSearchParams();
+  const chosen = selection.get("type");
   const [category, setCategory] = useState<Checkin["type"]>(
-    original?.type || "diet",
+    original?.type ||
+      (chosen === "exercise" || chosen === "medication" ? chosen : "diet"),
   );
   const [meal, setMeal] = useState<"breakfast" | "lunch" | "dinner">(
     original && "meal_slot" in original.payload

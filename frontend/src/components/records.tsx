@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { Checkin, Schemas } from "../api/client";
 
 export const categoryNames = {
-  diet: "饮食",
+  diet: "膳食",
   exercise: "运动",
   medication: "用药",
 };

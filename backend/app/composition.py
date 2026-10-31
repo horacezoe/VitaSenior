@@ -117,3 +117,8 @@ def providers(settings: Settings | None = None) -> dict[str, str]:
     """Report what is actually wired. Never claim 'real' for a mock implementation."""
     settings = settings or Settings()
     return {"chat": settings.chat_provider, "asr": settings.asr_provider, "tts": settings.tts_provider}
+
+
+def build_report_writer(settings):
+    from app.providers.report_writer import MiMoReportWriter
+    return MiMoReportWriter(settings) if settings.chat_provider == "real" else None

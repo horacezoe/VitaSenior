@@ -77,7 +77,10 @@ def cal01(ctx: Auth, elder_id: str, month: Annotated[str, Query(pattern=r"^\d{4}
         operation=lambda s, tx, actor, elder: s.reports.calendar(tx, actor, elder, month))
 
 @router.get("/elders/{elder_id}/reports/daily", operation_id="REPORT01", response_model=Envelope[DailyReport], status_code=200)
-def report01(ctx: Auth, elder_id: str, date: Annotated[Date, Query()]):
+def report01(ctx: Auth, elder_id: str, date: Annotated[Date, Query()], include_ai: bool = False):
+    if include_ai:
+        from app.application.daily_report import enriched_report
+        return enriched_report(ctx, elder_id, date)
     return perform(ctx, service_name="reports", elder_id=elder_id, snapshot=True,
         operation=lambda s, tx, actor, elder: s.reports.daily(tx, actor, elder, date))
 

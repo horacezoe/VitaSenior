@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -8,7 +9,7 @@ import {
   Page,
   useResource,
 } from "../components/ui";
-import { ProgressTiles, RecordRow } from "../components/records";
+
 import {
   displayDay,
   elderPath,
@@ -22,6 +23,7 @@ import { useData } from "../state/data";
 export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const { api, elderId, role } = useSession(),
     { revision } = useData();
+  const navigate = useNavigate();
   const today = localDay(api.now()),
     [month, setMonth] = useState(today.slice(0, 7)),
     [day, setDay] = useState(today);
@@ -33,14 +35,6 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
       ),
     revision,
   );
-  const report = useResource(
-    `report:${api.base}:${role}:${elderId}:${day}`,
-    () =>
-      api.get<Schemas["DailyReport"]>(
-        elderPath(elderId!, "reports/daily") + query({ date: day }),
-      ),
-    revision,
-  );
   const previous = (offset: number) => {
     const date = new Date(month + "-01T12:00:00+08:00");
     date.setUTCMonth(date.getUTCMonth() + offset);
@@ -49,13 +43,6 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
     setDay(value + "-01");
   };
   const weekday = (new Date(month + "-01T12:00:00+08:00").getUTCDay() + 6) % 7;
-  const records = report.data
-    ? [
-        ...report.data.records.diet,
-        ...report.data.records.exercise,
-        ...report.data.records.medication,
-      ]
-    : [];
   const content = (
     <>
       <Card>
@@ -94,10 +81,16 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
               aria-label={`${item.date}${item.state === "complete" ? "，适用记录已完成" : item.state === "partial" ? "，部分记录" : item.state === "future" ? "，未来日期" : "，暂无记录"}`}
               aria-pressed={day === item.date}
               className={`state-${item.state} ${day === item.date ? "selected" : ""}`}
-              onClick={() => setDay(item.date)}
+              disabled={item.state === "future"}
+              onClick={() => {
+                setDay(item.date);
+                navigate(`/daily/${item.date}`);
+              }}
             >
               {Number(item.date.slice(-2))}
-              {item.state !== "future" && <i className="day-dot" />}
+              {["complete", "partial"].includes(item.state) && (
+                <i className="day-dot" />
+              )}
             </button>
           ))}
         </div>
@@ -113,44 +106,9 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
           void calendar.refresh();
         }}
       />
-      <section className="section">
-        <div className="section-title">
-          <h2>{displayDay(day)}</h2>
-          <span>当天小结</span>
-        </div>
-        <ErrorNotice
-          error={report.error}
-          retry={() => {
-            void report.refresh();
-          }}
-        />
-        {report.loading && !report.data ? (
-          <Loading />
-        ) : (
-          report.data && (
-            <>
-              <ProgressTiles progress={report.data.completion.progress} />
-              <p className="note-card">{report.data.summary_text}</p>
-              <Card>
-                {records.length ? (
-                  records.map((record) => (
-                    <RecordRow
-                      key={record.checkin_id}
-                      record={record}
-                      edit={role === "elder"}
-                    />
-                  ))
-                ) : (
-                  <Empty
-                    title="这一天还没有记录"
-                    text="记录的是日常进度，不判断身体好坏。"
-                  />
-                )}
-              </Card>
-            </>
-          )
-        )}
-      </section>
+      <p className="form-hint">
+        选择日期查看当天健康日报。圆点表示已有打卡记录，未来日期不可查看。
+      </p>
     </>
   );
   return embedded ? (
