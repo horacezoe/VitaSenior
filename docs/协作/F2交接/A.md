@@ -11,6 +11,18 @@
 | 可运行样例 | `backend/app/tools/demo_walkthrough.py` | ✅ `python -m app.tools.demo_walkthrough [--base-url ...]`，逐条打印请求/响应，`WALKTHROUGH_OK` |
 | 最小配置/工厂共享提交 | `app/core/config.py`、`app/composition.py`、`app/main.py` | ✅ 已推 `f2/platform`，B/C 直接 merge 即可 |
 
+### 1.1 统一复验（合入 C `96177dc` 之后）
+
+- 合并提交 `3ebc05b`（C 的 `a7eadaf` + `96177dc`，零冲突；C 新增 5 项启动/联网测试）。
+- `pytest tests -q` → **366 passed, 42 deselected**；`demo_walkthrough` → `WALKTHROUGH_OK`；
+  `integration_smoke --strict` → **39/0/0**；`export_contract --check` 未变；`Architecture OK`。
+- 真实环境复验（`run-demo.ps1` + `backend/.env`，真实 uvicorn）：`/runtime.providers =
+  {chat: real, asr: mock, tts: mock}`、45 项能力全 true、真实 HTTP `AGENT01` **201 / 9.6s**。
+- **未运行** C 的 `tests/agent/smoke_mimo_network.py`：它要求 `--image <真实餐食照片>`，A 手上没有
+  可用的非私人照片；照片识别那半边的证据以 C 的隔离探测为准（文字半边 A 已用真实 key 复跑）。
+- 提示：C 的分支基于 `ad05258`，其 `config.py` 里没有 A 后加的 `TTS_*` 设置；本次合并按三方合并
+  保留了两边，C 下次 merge `f2/platform` 即可看到。
+
 **Provider 工厂（本轮唯一的共享依赖）**：只切换 TTS，不做通用 provider 平台。
 
 ```python
