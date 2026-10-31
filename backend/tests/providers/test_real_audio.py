@@ -597,6 +597,111 @@ def asr_response(text):
                           "message": {"role": "assistant", "content": text}}]})
 
 
+def test_real_factory_wav_asr_camera_confirmation_and_final_speech(tmp_path):
+    """Actual adapters and ports; HTTP bytes are substitutes, not microphone evidence."""
+    from sqlalchemy import func, select
+    from app.models.health import Checkin
+
+    settings = Settings(data_dir=tmp_path / "three-real", database_url=None, scanner_enabled=False,
+        public_base_url="http://testserver", chat_provider="real", chat_api_key=KEY,
+        chat_base_url=MiMoASR.BASE_URL, chat_model="mimo-v2.6-flash",
+        asr_provider="real", asr_api_key=KEY, asr_base_url=MiMoASR.BASE_URL, asr_model=MiMoASR.MODEL,
+        tts_provider="real", tts_api_key=KEY, tts_base_url=MiMoASR.BASE_URL, tts_model=MODEL,
+        tts_voice=VOICE)
+    app = create_app(settings)
+    recording, output = pcm_wav(rate=48_000, frames=4800), pcm_wav()
+    calls, spoken = [], []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        model = payload["model"]
+        calls.append(model)
+        # ASR, understanding and TTS must all allow an independent writer.
+        with UnitOfWork(app.state.sessions) as unit:
+            unit.session.connection().exec_driver_sql("SELECT 1")
+            unit.commit()
+        if model == MiMoASR.MODEL:
+            item = payload["messages"][0]["content"][0]["input_audio"]
+            assert item["format"] == "wav"
+            assert base64.b64decode(item["data"].split(",", 1)[1], validate=True) == recording
+            return asr_response("确认。")
+        if model == MODEL:
+            spoken.append(payload["messages"][0]["content"])
+            return audio_response(output)
+        assert model == settings.chat_model
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": json.dumps({"intent": "diet", "meal_slot": "lunch", "foods": ["青菜", "豆腐"],
+                "food_groups": ["vegetable", "protein"], "reply": "请确认这次午餐。"}, ensure_ascii=False)}}]})
+
+    for provider in (app.state.agent_chat, app.state.agent_asr, app.state.agent_tts):
+        assert provider.name == "real" and not provider.is_mock
+        provider._transport = httpx.MockTransport(handler)
+    with TestClient(app) as client:
+        seed = framework_seed(app.state.sessions, app.state.clock)
+        tokens = {}
+        for name in ("elder", "bound_child"):
+            account = {key: seed[name][key] for key in ("phone", "role")}
+            challenge = client.post("/api/v1/auth/code", json=account).json()["data"]["challenge_id"]
+            login = client.post("/api/v1/auth/login", json={**account, "challenge_id": challenge, "code": "123456"})
+            assert login.status_code == 200, login.text
+            tokens[name] = {"Authorization": "Bearer " + login.json()["data"]["access_token"]}
+        elder = seed["elder"]["elder_id"]
+
+        def post(path, key, **kwargs):
+            return client.post("/api/v1" + path,
+                headers={**tokens["elder"], "Idempotency-Key": key}, **kwargs)
+
+        runtime = client.get("/api/v1/runtime", headers=tokens["elder"]).json()["data"]
+        assert runtime["providers"] == {"chat": "real", "asr": "real", "tts": "real"}
+        prepared = post("/agent/turns", "prepare", json={"elder_id": elder, "client_turn_id": "prepare",
+            "text": "今天午餐吃了青菜和豆腐"})
+        assert prepared.status_code == 201, prepared.text
+        pending = prepared.json()["data"]
+        assert pending["actions"][0]["status"] == "pending"
+        with app.state.sessions() as tx:
+            assert tx.scalar(select(func.count()).select_from(Checkin)) == 0
+
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5WQAAAAASUVORK5CYII=")
+        image = post("/media", "frame", data={"purpose": "meal", "elder_id": elder},
+            files={"file": ("frame.png", png, "image/png")})
+        audio = post("/media", "recording", data={"purpose": "agent_audio", "elder_id": elder},
+            files={"file": ("utterance.wav", recording, "audio/wav")})
+        assert image.status_code == audio.status_code == 201
+        body = {"elder_id": elder, "client_turn_id": "spoken-confirm",
+            "conversation_id": pending["conversation_id"],
+            "audio_asset_id": audio.json()["data"]["asset_id"],
+            "image_asset_ids": [image.json()["data"]["asset_id"]],
+            "context": {"pending_action_id": pending["actions"][0]["action_id"]}}
+        confirmed = post("/agent/turns", "spoken-confirm", json=body)
+        assert confirmed.status_code == 201, confirmed.text
+        value = confirmed.json()["data"]
+        assert value["transcript"] == "确认。" and value["providers"]["asr"] == "real"
+        assert value["actions"][0]["status"] == "confirmed"
+        assert calls.count(settings.chat_model) == calls.count(MiMoASR.MODEL) == 1
+        before_replay = list(calls)
+        replay = post("/agent/turns", "spoken-confirm", json=body)
+        assert replay.status_code == 201 and replay.json()["data"] == value
+        assert calls == before_replay  # No repeated paid calls or duplicate health facts.
+        with app.state.sessions() as tx:
+            assert tx.scalar(select(func.count()).select_from(Checkin)) == 1
+            record = tx.scalar(select(Checkin))
+            assert record.source == "agent_confirmed"
+            record_id, day = record.id, record.local_date.isoformat()
+        report = client.get(f"/api/v1/elders/{elder}/reports/daily?date={day}", headers=tokens["bound_child"])
+        assert report.status_code == 200, report.text
+        assert report.json()["data"]["records"]["diet"][0]["checkin_id"] == record_id
+
+        # Execution may change reply.text. Supplement only the final text through AI02.
+        final = post("/ai/tts", "final-speech", json={"elder_id": elder, "text": value["reply"]["text"]})
+        assert final.status_code == 200, final.text
+        speech = final.json()["data"]
+        assert speech["provider"] == "real" and speech["is_mock"] is False
+        assert spoken[-1] == value["reply"]["text"]
+        fetched = client.get(speech["audio_asset"]["content_url"])
+        assert fetched.status_code == 200 and fetched.content == output
+        assert fetched.headers["content-type"] == "audio/wav"
+
+
 def test_asr_new_recordings_use_supplier_output_not_fixed_transcript():
     audio = pcm_wav(rate=16000)
     changed = audio[:-2] + b"\x12\x34"

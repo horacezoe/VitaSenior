@@ -1,6 +1,18 @@
 # F2 B：MiMo TTS 握手与验收
 
-2026-10-31（Asia/Hong_Kong）。**A 的 f2-demo-v4 已完成 chat/ASR/TTS 三模态工厂装配，B 的真实音频适配器已验证；完整多意图 Agent 工作流尚未完成，不能据此宣称只剩前端。** TTS 已有用户实听，ASR 已有 B 独立 WAV 与 A 正常 Uvicorn/AI01 的真实探测；Edge 实际采集尚未验收。三个模态统一 MiMo，无新增转码或依赖。下节为用户最新要求和重新核实的边界，优先于后文历史交付口径。
+2026-10-31（Asia/Hong_Kong）。**B 已正常快进合入 C `dfb41df`，复验多意图对话与音频装配通过；此前“真实理解仅支持饮食”的缺口已由 C 补齐。仍待 A 的提案真实 TTS、看板来源字段和新关怀文字动态 TTS 接线，以及正式前端设备验收。** TTS 已有用户对单个证据文件的实听确认，ASR 已有 B 独立 WAV 与 A/C 正常网络探测；Edge 真麦克风实际采集尚未验收。三个模态统一 MiMo，无新增转码或依赖。下节为最新状态，优先于后文历史交付口径。
+
+## 最新：同步 C 多意图工作流与 B 音频复验
+
+- 正常 fetch A/C 后，A 仍为 `origin/f2/platform@582e304`，C 为用户发布的 `origin/backend/f2-understanding@dfb41df`。C 已包含 B `ad4325a`，因此 B 用 `merge --ff-only` 快进成功，无冲突、无重写历史。本轮未修改 C 的业务实现或 A 共享文件。
+- 已阅读 C 最新交接及 `变更申请/C.md`，核对确认/取消/更正、ASR 标点及附带截图、澄清草稿恢复/过期/切换/并发、真实聊天/饮食/运动/日报/绑定/偏好和核对既有到时任务的用药确认；旧的受限饮食描述仅属历史。A 的公共接线仍未发布新提交。
+- B 独立实际运行 `python -X utf8 -m pytest tests/agent/test_dialogue_workflow.py tests/providers/test_real_audio.py tests/agent/test_f2_configured_startup.py tests/agent/test_proposal_notice.py tests/agent/test_f2_http.py -q --tb=short --basetemp=.pytest_cache/b-c-dialogue-audio-review` → **231 passed / 1 既有 warning / 43.09s**。使用原依赖、临时 SQLite 和 HTTP 替身，未付费调用。
+- 在 B 白名单 `tests/providers/test_real_audio.py` 新增一条集成回归：正常 Settings/工厂构建三项 real，仅设置各自 HTTP transport；48 kHz/16-bit PCM WAV 上传后经实际 MiMoASR 解析“确认。”，携带已授权截图进入 C 对话，确认只写一条 agent_confirmed，原请求重放既不重复供应商调用也不重复健康事实，子女日报读到同一记录，AI02 为执行后的最终 reply.text 生成音频并由 MEDIA03 返回完整 WAV。所有三类 HTTP 等待期间独立写 UoW 均可提交。此 WAV 为诊断测试数据，不是真麦克风、真实合成或人工实听证据。
+- 新测试首次因测试代码误用 ORM 字段 `record.checkin_id` 失败，改为现有 `record.id` 后实际运行 `python -X utf8 -m pytest tests/providers/test_real_audio.py -q --tb=short --basetemp=.pytest_cache/b-audio-dialogue-final` → **160 passed / 1 既有 warning / 10.27s**。未据该测试错误改业务实现。
+- `python -X utf8 -m app.tools.export_contract --check` → 匹配 `4b7ade26f590902a4eb131920589184b95e0b54a293e9df80ac9f8aa4859532c`；`python -X utf8 -m app.tools.check_architecture` → Architecture OK。未重复全量 560 项、strict 或供应商真实请求；C 报告的 560 passed/42 deselected、39/0/0 与真实三模态 TCP 结果以 C 交接为来源，不冒充 B 本轮结果。
+- 用户明确回复“前端未就绪”。因此正式 Edge 页面、真麦克风/摄像头预览、句末截图、浏览器实际播放/回执和手机 HTTPS 均待正式前端完成后验收；不要求用户另建录音页、手动录制或保存文件。本轮没有启动服务器、修改运行数据库或宣称设备已通过。此前对 `speech.wav` 的用户实听继续有效，但不外推为新链路全场景实听。
+
+下一步：A 正常合入 C `dfb41df` 及 B 本轮回归/交接，收口提案真实 TTS、Dashboard 来源 schema/service 和新关怀文字动态 TTS；短信/社区外部服务仍是独立接入事项，MiMo key 不代替这些服务。B 对现有音频适配器无新增依赖要求，待正式页面就绪后继续设备验收。
 
 ## 用户最新要求与业务闭环核查
 
@@ -18,14 +30,14 @@
 | 项目 | 已有实现 | 仍需完成 / 负责方 |
 | --- | --- | --- |
 | 真实 ASR/TTS | MiMo 适配器、正常 AI01/AI02 装配、来源校验和失败降级已通。默认测试保留 HTTP 替身，真实失败不会偷偷回退固定答案。 | B 配合正式 Edge PCM WAV 收音、句末截图、播放与回执验收；尚无实际麦克风采样证据。 |
-| 意图识别与执行 | C 的真实 `RealUnderstanding` 目前只输出 diet/clarify/unsupported；饮食候选经确认真实落库。已有通用执行端口覆盖更多动作。 | C 补真实多意图路由及对应子流程、参数澄清续接、确认/取消/更正；不能仅增加模型提示词后便宣称闭环。A 统一必要的共享状态/契约。 |
-| 语音确认 | 当前只识别少量精确文本，且条件要求没有图片。 | C 优先修复“确认。”等标点及自动附带摄像头截图的确认：先解析已属当前会话的待确认动作，再处理新业务意图，避免语音闭环再次走饮食提取。多轮澄清目前也没有保存未完成候选供下一句补齐。 |
+| 意图识别与执行 | C `dfb41df` 已补真实多意图路由、对应执行端口及持久化澄清草稿；B 已合入复验。 | A 正常合入并统一复验；前端保留 conversation_id，按最终回复和实际动作状态呈现。不能扩大成自动新增/改变用药方案。 |
+| 语音确认 | C 已补“确认。”等标点、自动截图、取消/更正优先处理及澄清续接；B 新增正常三 real 工厂与实际 ASR 适配器的组合回归通过。 | 正式 Edge 真麦克风与播放器尚待验收，不能拿 HTTP 替身或合成输入代替设备证明。 |
 | 家人关怀 | 预设全文音频或子女上传录音能实际保存、通知老人、取回播放、上报回执；重复播放不等于服药/运动打卡。任意新文字目前可发送，但没有动态 TTS。 | 预设素材可按用户要求继续使用；前端走实际通知/播放/回执。若支持任意文字语音，A/B 接既有 TTSProvider，并保留文字降级。 |
 | 历史与回看 | 14 天历史标记 demo_seed；后续实际新增、修改、取消、分页查询、日历、日报和家庭看板走真实 SQLite；确认动作幂等，不重复新增。上述 11 项含相关验证。 | 前端接真实查询接口并验证重启后回看，不把展示样例当成新记录；不重新清库或覆盖用户数据。 |
-| 修改提案播报 | 指子女申请修改老人档案、提醒设置或用药计划后，向老人读出具体完整改动；真实提案/决定状态机已实现。当前 `identity_flows.create_change` 仍显式构造 `ProposalFixtureTTS()`，因此全局 TTS=real 不会自动覆盖该路径。 | A 接已有配置的 TTSProvider；C/A 对齐真实模式全文标记（当前文案带【模拟】）。外部调用放写事务外，保持原文一致和媒体登记；失败保留全文、无完整音频不启动 60 秒窗口。B 提供适配器验证，不重写状态机。 |
+| 修改提案播报 | 指子女申请修改老人档案、提醒设置或用药计划后，向老人读出具体完整改动；真实提案/决定状态机已实现。C 已补真实来源/全文标记与校验，但 `identity_flows.create_change` 仍显式构造 `ProposalFixtureTTS()`。 | A 接已有配置的 TTSProvider。外部调用放写事务外，保持原文一致和媒体登记；失败保留全文、无完整音频不启动 60 秒窗口。B 提供适配器验证，不重写状态机。 |
 | 看板来源标识 | 看板实际统计来自数据库。 | A 处理 `Dashboard.provider_mode` schema/service 写死 mock 的历史字段，避免把真实统计误标；不能只改标签掩盖上述路由缺口。 |
 
-验收顺序：先补真实意图和语音确认/澄清续接，再接提案 TTS，然后从正式 Edge 界面执行“说话→ASR→句末截图+文字→意图→业务子流程→明确确认→实际保存→最终文字 TTS→历史回看”。缺口未完成前不得把所有意图表述为可用。
+后续验收顺序：A 合入已补齐的 C 真实意图和语音确认/澄清续接，接提案及新关怀文字 TTS，然后从正式 Edge 界面执行“说话→ASR→句末截图+文字→意图→业务子流程→明确确认→实际保存→最终文字 TTS→历史回看”。仅对已经验证的意图与设备范围报告通过。
 
 提案全文可能超过 B 当前单次 200 字保护上限；不能简单截断。接线验收需覆盖全文超限时明确文字降级，或另行实现并验证完整分段合成/拼接；无完整音频时不能启动自动生效窗口。该要求不是新增模型或媒体库的理由。
 
