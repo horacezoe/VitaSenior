@@ -11,31 +11,32 @@
 | 可运行样例 | `backend/app/tools/demo_walkthrough.py` | ✅ `python -m app.tools.demo_walkthrough [--base-url ...]`，逐条打印请求/响应，`WALKTHROUGH_OK` |
 | 最小配置/工厂共享提交 | `app/core/config.py`、`app/composition.py`、`app/main.py` | ✅ 已推 `f2/platform`，B/C 直接 merge 即可 |
 
-### 1.1 统一复验（合入 C `96177dc` 之后）
+### 1.1 统一复验（合入 B `4ddf216` 与 C `bb37744` 之后）
 
-- 合并提交 `3ebc05b`（C 的 `a7eadaf` + `96177dc`，零冲突；C 新增 5 项启动/联网测试）。
-- `pytest tests -q` → **366 passed, 42 deselected**；`demo_walkthrough` → `WALKTHROUGH_OK`；
-  `integration_smoke --strict` → **39/0/0**；`export_contract --check` 未变；`Architecture OK`。
-- 真实环境复验（`run-demo.ps1` + `backend/.env`，真实 uvicorn）：`/runtime.providers =
-  {chat: real, asr: mock, tts: mock}`、45 项能力全 true、真实 HTTP `AGENT01` **201 / 9.6s**。
-- **未运行** C 的 `tests/agent/smoke_mimo_network.py`：它要求 `--image <真实餐食照片>`，A 手上没有
-  可用的非私人照片；照片识别那半边的证据以 C 的隔离探测为准（文字半边 A 已用真实 key 复跑）。
-- 提示：C 的分支基于 `ad05258`，其 `config.py` 里没有 A 后加的 `TTS_*` 设置；本次合并按三方合并
-  保留了两边，C 下次 merge `f2/platform` 即可看到。
+- 合并提交 `f542fb4`（B 的 MiMo TTS + C 的 Flash 轻量理解，零冲突）。
+- `pytest tests -q` → **489 passed, 42 deselected**；`integration_smoke --strict` → **39/0/0**；
+  `export_contract --check` 未变；`Architecture OK`。
+- A 修正了自己那条过期断言（原来断言"`real_tts.py` 不存在就报错"）；B 的适配器现在存在，
+  改为断言"能构建出 `name=="real"` 的实例、`providers.tts=="real"`"，并保留"缺配置就拒绝启动"。
+- 真实环境复验（`run-demo.ps1` + `backend/.env`，真实 uvicorn）：`providers =
+  {chat: real, asr: mock, tts: real}`；`AI02` 真实音频；`AGENT01` 真实文字识别 201。
+- `run-demo.ps1` 现在会把 `PUBLIC_BASE_URL` 的端口对齐到 `-Port`，否则媒体 `content_url` 会指向
+  错误端口（前端/手机用 LAN IP 时同理，必须让这个变量与实际访问地址一致）。
+- **未运行** C 的 `tests/agent/smoke_mimo_network.py`：需要 `--image <真实餐食照片>`，A 没有可用素材；
+  照片识别证据仍以 C 的探测为准。
 
 **Provider 工厂（本轮唯一的共享依赖）**：只切换 TTS，不做通用 provider 平台。
 
 ```python
-build_agent_providers(settings) -> (chat, asr, tts)   # chat/asr 固定 mock
-providers(settings) -> {"chat": "mock", "asr": "mock", "tts": settings.tts_provider}
+build_agent_providers(settings) -> (chat, asr, tts)   # ASR 固定 mock
+providers(settings) -> {"chat": settings.chat_provider, "asr": "mock", "tts": settings.tts_provider}
 ```
 
-- `TTS_PROVIDER=mock|real`；`real` 时 A 会 `from app.providers import real_tts` 并调用
-  `real_tts.build(settings)`——**这个模块由 B 提供**，未提供时启动直接报
-  `TTS_PROVIDER=real but app/providers/real_tts.py does not exist yet`，不会假装成功。
-- `providers` 状态由实际构建的对象推导，`agent_capabilities.py` 不再保存第二份状态；mock 永远不会
+- `TTS_PROVIDER=mock|real`；`real` 时 A 调用 B 的 `app/providers/real_tts.py::build(settings)`。
+- `CHAT_PROVIDER=mock|real`（C 的 `RealUnderstanding`）；`ASR_PROVIDER` 仍固定 mock（本轮延期）。
+- 两种真实 provider 都要求对应 `*_API_KEY / *_BASE_URL / *_MODEL`，缺一项启动直接失败。
+- `providers` 状态由实际构建的对象推导，`agent_capabilities.py` 不保存第二份状态；mock 永远不会
   被标成 real。
-- config 只放开 TTS：`CHAT_PROVIDER`/`ASR_PROVIDER` 必须是 mock（ASR 本轮延期）。
 
 ## 2. FAST-01–04（发布新标签的门槛）
 
@@ -45,10 +46,10 @@ providers(settings) -> {"chat": "mock", "asr": "mock", "tts": settings.tts_provi
 | FAST-02 | **真实文字/餐食照片 → 饮食确认落库**（用户本版口径） | `CHAT_PROVIDER=real` 启动、`/runtime.providers.chat=="real"`、真实文字与照片各跑一轮：待确认→确认落库→重试不新增→子女看板/日报同一记录 | ✅ 适配器与供应商实测由 C 完成（`backend/f2-understanding@11445bb`：文字约 3.8s、图片约 11.8s，C 侧 157 passed）；A 已放开并接线，见 §2.1 |
 | FAST-03 | 提案播报保留 F1 全文 fixture；无完整音频不计时 | 有匹配语音 → 播报后 60 秒窗口生效；无匹配 → 只有文字、`auto_apply_at` 恒 null | ✅ 回归已覆盖，B 侧 NOTI03 已验 |
 | FAST-04 | 完整主链（建档→绑定→饮食确认→看板/日报） | `integration_smoke --strict` 39/0/0 | ✅ |
-| FAST-05（加分） | 真实 TTS 接入且标识准确 | `TTS_PROVIDER=real`、`providers.tts=="real"`、`AI02` 返回真实音频 | ⏳ 等 B 的 `real_tts.build`，未完成不影响 FAST-01–04 |
+| FAST-05 | 真实 TTS 接入且标识准确 | `TTS_PROVIDER=real`、`providers.tts=="real"`、`AI02` 返回真实音频（`is_mock=false`、可播放字节） | ✅ 已由 A 实测：`AI02` 200 / 1.7s，`provider=real`、`is_mock=False`、`audio/wav` 84,524 B / 1760 ms，取回字节以 `RIFF` 开头；B 侧另有用户实听确认 |
 
-标签策略：FAST-01–04 全绿后再打新标签（例如 `f2-demo-v1`），**不移动 `f1-integrated-v1`**。
-未通过项按编号写在下表，不用"部分通过"含混表述。
+标签策略：FAST-01–05 全绿后发布新标签（`f2-demo-v1` → `f2-demo-v2` → 本轮 `f2-demo-v3`），
+**不移动 `f1-integrated-v1`**。未通过项按编号写在下表，不用"部分通过"含混表述。
 
 ### 2.1 真实理解（chat）接线 — 已完成
 

@@ -59,10 +59,14 @@ def test_provider_factory_separates_mock_and_real(tmp_path):
     # ASR is deferred this round; declaring it real is rejected.
     with pytest.raises(ValueError, match="ASR must stay mock"):
         Settings(data_dir=tmp_path, asr_provider="real")
-    # A real TTS must refuse to fake it while B's module is absent.
-    with pytest.raises(RuntimeError, match="real_tts.py"):
-        build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real", tts_api_key="k",
-                                       tts_base_url="https://example.invalid/v1", tts_model="m"))
+    # Real TTS builds B's adapter and reports itself, now that the module exists.
+    # B pins the endpoint to the official MiMo root (no fake hosts, no network here).
+    real_tts = Settings(data_dir=tmp_path, tts_provider="real", tts_api_key="k",
+                        tts_base_url="https://api.xiaomimimo.com/v1", tts_model="mimo-v2.5-tts")
+    _, _, tts_real = build_agent_providers(real_tts)
+    assert getattr(tts_real, "name", None) == "real"
+    assert providers(real_tts)["tts"] == "real"
+    # ...but it still refuses to start half-configured.
     with pytest.raises(ValueError, match="TTS_PROVIDER=real requires"):
         Settings(data_dir=tmp_path, tts_provider="real")
     with pytest.raises(ValueError, match="TTS_PROVIDER"):

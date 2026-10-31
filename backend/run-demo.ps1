@@ -25,7 +25,13 @@ foreach ($line in Get-Content $envFile -Encoding UTF8) {
 }
 
 $providers = "chat=$env:CHAT_PROVIDER asr=$env:ASR_PROVIDER tts=$env:TTS_PROVIDER"
+# Media content_url is built from PUBLIC_BASE_URL; if it points at another port the
+# <img>/<audio> URLs would hit a dead port. Keep it aligned with the served port.
+if ($env:PUBLIC_BASE_URL -match '^(https?://[^/:]+)(:\d+)?/?$') {
+    $env:PUBLIC_BASE_URL = "$($Matches[1]):$Port"
+}
 Write-Host "loaded $loaded variables from backend/.env (providers: $providers)"
+Write-Host "public base url: $env:PUBLIC_BASE_URL"
 Write-Host "starting uvicorn on http://0.0.0.0:$Port  (docs: /docs)"
 Push-Location $PSScriptRoot
 try {
