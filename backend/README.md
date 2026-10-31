@@ -138,3 +138,12 @@ Get-FileHash contracts/openapi.json -Algorithm SHA256
 资源不存在/无权读取子资源均返回 404；elder_id 越权与未知老人统一 403，避免泄漏。子女写档案/计划/设置 403 PROPOSAL_REQUIRED；老人独占的打卡、通知回执和动作确认不向子女开放。写校验使用同一实际写 Session，不能用前置的另一连接代替。
 
 下一阶段主负责人先从 framework-v1 读取交接记录，发布 A/B/C 白名单与任务单，再开三个 worktree。A 接 identity/auth 后续、建档、绑定、媒体、提案；B 接 health/checkin、计划、通知、汇总及 scheduler；C 接 agent/memory 和 providers。不得另建第二套 DB、DTO、应用或绕过 port。当前未启动任何业务 Agent。
+
+
+## 本轮 VoiceDesign 配置与关怀播报（2026-11-01）
+
+本机 `.env` 不入库；团队复制 `.env.mimo.example` 后自行填写供应商密钥。真实 TTS 配置使用 `TTS_MODEL=mimo-v2.5-tts-voicedesign`，`TTS_VOICE` 是小男孩声音的自然语言描述。参考 [MiMo 官方语音合成文档](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/audio/speech-synthesis-v2.5)：VoiceDesign 请求使用 user 音色描述与 assistant 完整待朗读文字，不发送预设 voice，关闭 optimize_text_preview，避免改写提案和提醒。保留原有预设模型适配仅用于兼容；本机预览和团队示例已改用 VoiceDesign。
+
+真实模式下，家人预设关怀也请求API合成，不再命中模拟WAV样例；上传的真人录音保留原声。外部调用仍在数据库写事务之外，已完成的同幂等请求先重放，不重复付费合成。语音失败保留完整文字，不产生假音频或播放完成回执。语音文字上限200字，供应商单次总时限20秒，超限明确降级。
+
+通话配对请求改为进入设置中的家庭连接，原独立绑定HTTP接口保持不变。`vitasenior.workflow` 终端日志提供request_id、turn_id、节点、开始/成功/失败、耗时与错误码，不记录转写正文、图片、声音或凭据。前端Agent/最终TTS节点仅对可重试错误重试一次，保留幂等标识。
