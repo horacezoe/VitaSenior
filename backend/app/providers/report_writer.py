@@ -2,6 +2,8 @@ from threading import Lock
 import asyncio
 import hashlib
 import json
+import logging
+import time
 import httpx
 from pydantic import ValidationError
 from app.contracts.report_writer import ReportInput, report_payload
@@ -25,37 +27,64 @@ class MiMoReportWriter:
         self.generation_lock=Lock()
 
     def generate(self, snapshot: ReportInput) -> DailyInsights:
-        with self.generation_lock:
-            result=self._generate(snapshot)
-            self._validate_evidence(snapshot,result)
-            return result
+        return self._run(snapshot)
 
-    def _generate(self, snapshot: ReportInput) -> DailyInsights:
+    def _run(self,snapshot):
+        started=time.monotonic()
+        if not self.generation_lock.acquire(timeout=20):
+            raise AppError(504,'PROVIDER_TIMEOUT','Daily report busy',retryable=True)
+        try:
+            remaining=lambda: 20-(time.monotonic()-started)
+            if remaining()<=0:raise AppError(504,'PROVIDER_TIMEOUT','Daily report deadline exceeded',retryable=True)
+            try:
+                return self._generate(snapshot,timeout=remaining())
+            except AppError as error:
+                repairable={'Missing model safety assessment','Inconsistent model safety assessment',
+                    'Unsupported model evidence','Model inferred intake from a plan','Duplicate model finding',
+                    'Invalid food-drug evidence','Invalid drug-drug evidence','Daily report output schema invalid',
+                    'Daily report response incomplete'}
+                if error.message not in repairable or remaining()<4:raise
+                # One corrective request, within the SAME total 20 second budget.
+                # Never retry business writes, auth failures or arbitrary network errors.
+                logging.getLogger('vitasenior.workflow').warning('Safety output rejected; one bounded correction reason=%s',error.message)
+                return self._generate(snapshot,timeout=remaining(),correction=error.message)
+        finally:
+            self.generation_lock.release()
+
+    def _generate(self, snapshot: ReportInput, *, timeout=20, correction=None):
         payload = report_payload(snapshot)
         content=json.dumps(payload,ensure_ascii=False,sort_keys=True)
         if len(content.encode())>120000:raise AppError(422,"VALIDATION_ERROR","Report context too large")
         digest=hashlib.sha256(content.encode()).hexdigest()
         with self.lock:
             if digest in self.cache:return self.cache[digest]
-        result=asyncio.run(self._request(content))
+        result=asyncio.run(self._request(content,timeout=timeout,correction=correction))
         self._validate_evidence(snapshot,result)
         with self.lock:
             if len(self.cache)>=128:self.cache.pop(next(iter(self.cache)),None)
             self.cache[digest]=result
         return result
 
-    async def _request(self, content):
+    async def _request(self, content, *, timeout=20, correction=None):
         s=self.settings
         try:
-            async with asyncio.timeout(20):
-                async with httpx.AsyncClient(transport=self.transport,follow_redirects=False,timeout=20) as client:
+            async with asyncio.timeout(timeout):
+                async with httpx.AsyncClient(transport=self.transport,follow_redirects=False,timeout=timeout) as client:
                     response=await client.post(s.chat_base_url.rstrip('/')+'/chat/completions',
                         headers={'Authorization':'Bearer '+s.chat_api_key},json={
-                        'model':s.chat_model,'messages':[{'role':'system','content':PROMPT},{'role':'user','content':content}],
-                        'stream':False,'thinking':{'type':'disabled'},'response_format':{'type':'json_object'},'max_completion_tokens':2400})
+                        'model':s.chat_model,'messages':[{'role':'system','content':PROMPT + (('\n上次输出未通过校验：'+correction+'。请重新核对 JSON 字段与证据引用，不能沿用错误。') if correction else '')},{'role':'user','content':content}],
+                        'stream':False,'thinking':{'type':'disabled'},'response_format':{'type':'json_object'},'max_completion_tokens':4096})
                     if response.status_code!=200:raise AppError(502,'PROVIDER_ERROR','Daily report provider unavailable',retryable=response.status_code in {429,502,503,504})
                     if len(response.content)>65536:raise ValueError('response too large')
-                    return DailyInsights.model_validate_json(response.json()['choices'][0]['message']['content'])
+                    choice=response.json()['choices'][0]
+                    if choice.get('finish_reason','stop')!='stop':
+                        logging.getLogger('vitasenior.workflow').warning('Daily report incomplete finish=%s',choice.get('finish_reason'))
+                        raise AppError(502,'PROVIDER_ERROR','Daily report response incomplete',retryable=True)
+                    return DailyInsights.model_validate_json(choice['message']['content'])
+        except ValidationError as exc:
+            fields=[e['type'] for e in exc.errors()]
+            logging.getLogger('vitasenior.workflow').warning('Daily report schema failure types=%s', fields)
+            raise AppError(502,'PROVIDER_ERROR','Daily report output schema invalid') from exc
         except (TimeoutError,httpx.TimeoutException) as exc:
             raise AppError(504,'PROVIDER_TIMEOUT','Daily report timed out',retryable=True) from exc
         except (httpx.RequestError,ValueError,KeyError,IndexError,TypeError,ValidationError) as exc:
