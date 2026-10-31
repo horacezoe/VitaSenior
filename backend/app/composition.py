@@ -70,5 +70,32 @@ def capabilities(operation_ids: Iterable[str]) -> dict[str, bool]:
     declared = declared_capabilities()
     return {op: op in declared for op in sorted(operation_ids)}
 
-def providers() -> dict[str, str]:
-    return dict(agent_capabilities.PROVIDERS)
+def build_agent_providers(settings: Settings | None = None):
+    """The single seam for agent providers.
+
+    F2 adds only a real TTS (module owned by B); chat and ASR stay mock, so this is
+    a two-way switch, not a generic provider platform. The returned objects are the
+    ones the app actually serves with, and `providers()` reports exactly those.
+    """
+    from app.providers.mock_audio import MockASR
+    from app.providers.mock_chat import MockUnderstanding
+    settings = settings or Settings()
+    chat, asr = MockUnderstanding(), MockASR()
+    return chat, asr, _build_tts(settings)
+
+def _build_tts(settings: Settings):
+    from app.providers.mock_audio import MockTTS
+    if settings.tts_provider == "mock":
+        return MockTTS()
+    try:
+        from app.providers import real_tts  # B owns this module
+    except ImportError as exc:
+        raise RuntimeError(
+            "TTS_PROVIDER=real but app/providers/real_tts.py does not exist yet; "
+            "keep TTS_PROVIDER=mock until B delivers the real provider") from exc
+    return real_tts.build(settings)
+
+def providers(settings: Settings | None = None) -> dict[str, str]:
+    """Report what is actually wired. Never claim 'real' for a mock implementation."""
+    settings = settings or Settings()
+    return {"chat": "mock", "asr": "mock", "tts": settings.tts_provider}
