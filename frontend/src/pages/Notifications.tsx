@@ -33,6 +33,7 @@ import { useData } from "../state/data";
 import { SpeechPlayer } from "../media/player";
 import { PcmRecorder } from "../media/pcm";
 import { reminderTitle } from "../components/records";
+import { useDisplayed } from "../state/use-displayed";
 
 const deliveryNames = {
   pending: "待家人看到",
@@ -98,29 +99,7 @@ export function Notifications() {
         <Loading />
       ) : items.length ? (
         items.map((item) => (
-          <Link
-            to={`/notifications/${item.notification_id}`}
-            key={item.notification_id}
-            className="notification-card"
-            style={{ display: "block" }}
-          >
-            <span className="proposal-state">
-              <Bell size={13} />
-              {deliveryNames[item.delivery_state]} ·{" "}
-              {taskNames[item.task_state]}
-            </span>
-            <h3>{reminderTitle(item.title)}</h3>
-            <p>{item.text}</p>
-            <div className="card-actions">
-              <span className="tag">
-                {role === "elder"
-                  ? item.audio_asset_id
-                    ? "打开并接听 →"
-                    : "查看完整文字 →"
-                  : "查看详情 →"}
-              </span>
-            </div>
-          </Link>
+          <NotificationItem key={item.notification_id} item={item} />
         ))
       ) : (
         <Empty
@@ -141,6 +120,48 @@ export function Notifications() {
         </Button>
       )}
     </Page>
+  );
+}
+
+function NotificationItem({ item }: { item: Notification }) {
+  const { role } = useSession(),
+    element = useRef<HTMLAnchorElement>(null);
+  const [seen, setSeen] = useState<Notification | null>(null);
+  const displayed = useDisplayed(item, element, setSeen);
+  const state =
+    seen &&
+    seen.notification_id === item.notification_id &&
+    deliveryRank[seen.delivery_state] > deliveryRank[item.delivery_state]
+      ? seen.delivery_state
+      : item.delivery_state;
+  return (
+    <Link
+      ref={element}
+      to={`/notifications/${item.notification_id}`}
+      className="notification-card"
+      style={{ display: "block" }}
+    >
+      <span className="proposal-state">
+        <Bell size={13} />
+        {deliveryNames[state]} · {taskNames[item.task_state]}
+      </span>
+      <h3>{reminderTitle(item.title)}</h3>
+      <p>{item.text}</p>
+      <div className="card-actions">
+        <span className="tag">
+          {role === "elder"
+            ? item.audio_asset_id
+              ? "打开并接听 →"
+              : "查看完整文字 →"
+            : "查看详情 →"}
+        </span>
+      </div>
+      {!!displayed.error && (
+        <small className="form-hint">
+          展示状态同步稍慢，可打开后重新核对。
+        </small>
+      )}
+    </Link>
   );
 }
 
@@ -263,6 +284,8 @@ export function NotificationCall() {
         played_at: next.played_at,
       };
     });
+  const textElement = useRef<HTMLDivElement>(null);
+  const displayed = useDisplayed(current, textElement, updateDelivery);
   async function event(kind: Schemas["EventType"], eventId?: string) {
     const key = eventId || uid(kind);
     return api.post<Schemas["EventResult"]>(
@@ -523,9 +546,10 @@ export function NotificationCall() {
       back="/notifications"
     >
       <ErrorNotice
-        error={resource.error || error || action.error}
+        error={resource.error || displayed.error || error || action.error}
         retry={() => {
           setError(null);
+          displayed.retry();
           void resource.refresh();
         }}
       />
@@ -547,13 +571,19 @@ export function NotificationCall() {
               {taskNames[current.task_state]}
             </p>
           </div>
-          <Card>
-            <p
-              style={{ whiteSpace: "pre-line", fontSize: 16, lineHeight: 1.9 }}
-            >
-              {current.text}
-            </p>
-          </Card>
+          <div ref={textElement}>
+            <Card>
+              <p
+                style={{
+                  whiteSpace: "pre-line",
+                  fontSize: 16,
+                  lineHeight: 1.9,
+                }}
+              >
+                {current.text}
+              </p>
+            </Card>
+          </div>
           {role === "elder" && current.audio_asset_id && (
             <div className="section">
               <Button
