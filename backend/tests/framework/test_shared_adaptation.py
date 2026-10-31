@@ -29,7 +29,8 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     for module in (identity_capabilities, health_capabilities, agent_capabilities):
         assert isinstance(module.CAPABILITIES, frozenset)
     assert declared_capabilities() == identity_capabilities.CAPABILITIES | health_capabilities.CAPABILITIES | agent_capabilities.CAPABILITIES
-    assert providers() == agent_capabilities.PROVIDERS
+    # Provider status is derived from the settings that actually built them.
+    assert providers(Settings(tts_provider="mock")) == {"chat": "mock", "asr": "mock", "tts": "mock"}
     mounted = {(op['operationId']) for item in app.openapi()['paths'].values() for m, op in item.items() if m in {'get', 'post', 'put', 'delete'}}
     assert declared_capabilities() <= mounted
     assert set(capabilities(mounted)) == mounted
@@ -37,6 +38,23 @@ def test_capability_declarations_are_per_domain_and_aggregated(env):
     # The gate itself must default to false for anything not declared, without
     # depending on any team's current progress (stable across all three domains).
     assert capabilities({'ZZZ99'}) == {'ZZZ99': False}
+
+def test_provider_factory_switches_only_tts(tmp_path):
+    """F2 seam: chat/ASR stay mock; TTS may be real once B ships the module."""
+    from app.composition import build_agent_providers
+    from app.providers.mock_audio import MockTTS
+    settings = Settings(data_dir=tmp_path, tts_provider="mock")
+    chat, asr, tts = build_agent_providers(settings)
+    assert isinstance(tts, MockTTS)
+    assert providers(settings) == {"chat": "mock", "asr": "mock", "tts": "mock"}
+    # Declaring a real TTS is allowed by config, but it must refuse to fake it
+    # while B's module is absent.
+    with pytest.raises(RuntimeError, match="real_tts.py"):
+        build_agent_providers(Settings(data_dir=tmp_path, tts_provider="real"))
+    with pytest.raises(ValueError, match="real providers"):
+        Settings(data_dir=tmp_path, chat_provider="real")
+    with pytest.raises(ValueError, match="TTS_PROVIDER"):
+        Settings(data_dir=tmp_path, tts_provider="bogus")
 
 def test_services_receive_the_application_clock_and_settings(tmp_path):
     clock = FakeClock(datetime(2026, 10, 30, 4, 0, tzinfo=timezone.utc))

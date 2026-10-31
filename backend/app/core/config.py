@@ -28,8 +28,10 @@ class Settings:
             raise ValueError("F0 supports development/demo/test environments only")
         if self.app_timezone != "Asia/Hong_Kong":
             raise ValueError("Business timezone is frozen to Asia/Hong_Kong")
-        if any(p != "mock" for p in (self.chat_provider, self.asr_provider, self.tts_provider)):
-            raise ValueError("F0 has no real providers; use mock (business routes still return 501)")
+        if self.chat_provider != "mock" or self.asr_provider != "mock":
+            raise ValueError("F2 allows real providers only for TTS; chat/ASR must stay mock")
+        if self.tts_provider not in {"mock", "real"}:
+            raise ValueError("TTS_PROVIDER must be 'mock' or 'real'")
         if self.web_push_enabled:
             raise ValueError("Web Push is not implemented in F0")
         if self.scanner_interval <= 0:
