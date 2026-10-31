@@ -25,6 +25,7 @@ vi.mock("../src/components/ui", async (original) => ({
 const report = {
   date: "2026-11-01",
   ai_status: "ready",
+  reward_summary: { cumulative: 7, on_date: 2 },
   person: { display_name: "测试老人", conditions: [] },
   records: { diet: [], exercise: [], medication: [] },
   completion: {
@@ -116,4 +117,15 @@ it("child report no longer exposes the warm broadcast block", () => {
   expect(page).toContain("长辈基础信息");
   expect(page).not.toContain("AI管家温情播报");
   expect(page).not.toContain("温情内容");
+});
+
+it("both roles show the same server cumulative and dated earnings; child footer addresses family", () => {
+  const elder = html(<DailyReport embedded view="health" />),
+    child = html(<DailyReport embedded />, "child");
+  for (const page of [elder, child]) {
+    expect(page).toContain('class="report-eggs">7');
+    expect(page).toContain("今日积累：2");
+  }
+  expect(child).toContain("建议您与长辈核对");
+  expect(child).not.toContain("一句提醒");
 });

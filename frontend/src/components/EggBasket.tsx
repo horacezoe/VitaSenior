@@ -4,7 +4,7 @@ import { useData } from "../state/data";
 import { rewardImages } from "../assets";
 
 export function EggBasket() {
-  const { ledger } = useData(),
+  const { ledger, dailyReport } = useData(),
     basket = useRef<HTMLImageElement>(null);
   const [count, setCount] = useState(0),
     [message, setMessage] = useState("每一份认真，都值得被看见");
@@ -108,6 +108,7 @@ export function EggBasket() {
       window.removeEventListener("storage", update);
     };
   }, [ledger]);
+  const shown = dailyReport?.reward_summary?.cumulative ?? count;
   return (
     <section className="egg-garden" aria-label="打卡鸡蛋奖励">
       <div className="egg-copy">
@@ -116,7 +117,7 @@ export function EggBasket() {
           我的小小收获
         </span>
         <p>
-          <strong>{count}</strong>
+          <strong>{shown}</strong>
           <span>枚鸡蛋</span>
         </p>
         <small role="status" aria-live="polite">
@@ -124,10 +125,10 @@ export function EggBasket() {
         </small>
       </div>
       <div className="basket-art">
-        {count > 0 && (
+        {shown > 0 && (
           <img className="basket-egg egg-one" src={rewardImages.egg} alt="" />
         )}
-        {count > 1 && (
+        {shown > 1 && (
           <img className="basket-egg egg-two" src={rewardImages.egg} alt="" />
         )}
         <img

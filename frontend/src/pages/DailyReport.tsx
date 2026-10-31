@@ -1,3 +1,5 @@
+import { AnomalyBanner } from "../components/Anomalies";
+import { familyReportTip } from "../state/report";
 import { useEffect, useState } from "react";
 import ReportSpeech from "../components/ReportSpeech";
 import { Link, useParams } from "react-router-dom";
@@ -50,7 +52,14 @@ export default function DailyReport({
       ),
     revision,
   );
-  const r = report.data || basic.data,
+  const snapshot = report.data || basic.data;
+  const r = snapshot
+      ? {
+          ...snapshot,
+          anomalies: basic.data?.anomalies ?? snapshot.anomalies,
+          reward_summary: basic.data?.reward_summary ?? snapshot.reward_summary,
+        }
+      : undefined,
     kind =
       dimension && ["diet", "exercise", "medication"].includes(dimension)
         ? (dimension as Dimension)
@@ -65,6 +74,7 @@ export default function DailyReport({
         : r.insights.medication_advice);
   const content = (
     <>
+      <AnomalyBanner anomalies={r?.anomalies || []} />
       <ErrorNotice
         error={report.error}
         retry={() => {
@@ -91,6 +101,16 @@ export default function DailyReport({
               >
                 重新生成
               </button>
+            </p>
+          )}
+          {r.safety_review_status === "insufficient_data" && (
+            <p className="form-hint">
+              相互作用核对资料不足，请先核对药品名称或饮食记录；这不代表已确认没有相互作用。
+            </p>
+          )}
+          {r.safety_review_status === "unavailable" && (
+            <p className="form-hint">
+              本次相互作用核对暂未完成，稍后可重试；已有核对记录仍保留。
             </p>
           )}
           {kind ? (
@@ -156,15 +176,6 @@ export default function DailyReport({
                       有明确未服用记录，请核对原因；不要自行补服、加量或更改处方。
                     </div>
                   )}
-                  <div className="report-warning" role="note">
-                    <strong>用药冲突核对</strong>
-                    <p>
-                      {r.person?.allergies?.length
-                        ? `档案中有过敏信息：${r.person.allergies.join("、")}。请核对药品。`
-                        : ""}
-                      当前未接入药物相互作用核验，不能据此判断没有冲突。疑问请交由医生或药师确认。
-                    </p>
-                  </div>
                 </>
               )}
               <Card className="section">
@@ -243,25 +254,12 @@ export default function DailyReport({
                   </h2>
                 </section>
               )}
-              {view === "health" ? (
-                <CumulativeEggs today={m.eggs} />
-              ) : (
-                role === "child" && (
-                  <Card className="section">
-                    <h2>🥚 当日鸡蛋积分</h2>
-                    <strong className="report-eggs">{m.eggs} 枚</strong>
-                    <div className="report-meter">
-                      <label>当日有效打卡核对 · 任务目标{m.expected}项</label>
-                      <progress
-                        value={m.eggs}
-                        max={Math.max(1, m.expected, m.eggs)}
-                      />
-                    </div>
-                    <small>
-                      演示样例不计入；这里是当日核对数，不是跨设备累计余额。
-                    </small>
-                  </Card>
-                )
+              {(view === "health" || role === "child") && (
+                <CumulativeEggs
+                  today={m.eggs}
+                  day={day}
+                  summary={r.reward_summary}
+                />
               )}
               <h2 className="section">三大打卡记录</h2>
               <div className="report-dimensions">
@@ -292,9 +290,7 @@ export default function DailyReport({
                 })}
               </div>
               {role === "child" && (
-                <p className="note-card">
-                  {r.insights?.reminder || "按自己的节奏照顾好今天。"}
-                </p>
+                <p className="note-card">{familyReportTip(r)}</p>
               )}
             </>
           )}
@@ -316,8 +312,17 @@ export default function DailyReport({
   );
 }
 
-function CumulativeEggs({ today }: { today: number }) {
+function CumulativeEggs({
+  today,
+  day,
+  summary,
+}: {
+  today: number;
+  day: string;
+  summary?: Schemas["RewardSummary"] | null;
+}) {
   const { ledger } = useData();
+  const { api } = useSession();
   const [total, setTotal] = useState(0);
   useEffect(() => {
     const update = () =>
@@ -333,10 +338,13 @@ function CumulativeEggs({ today }: { today: number }) {
   return (
     <Card className="section">
       <h2>🥚 累计鸡蛋积分</h2>
-      <strong className="report-eggs">{total} 枚</strong>
-      <p>今日积累：{today} 枚</p>
+      <strong className="report-eggs">{summary?.cumulative ?? total} 枚</strong>
+      <p>
+        {day === localDay(api.now()) ? "今日积累" : "当日积累"}：
+        {summary?.on_date ?? today} 枚
+      </p>
       <small>
-        累计与首页鸡蛋篮子一致，按本设备已核对记录保存；今日数按当日有效记录核对。
+        累计按服务端已确认的非演示打卡核对；重复提交与更正不重复计分，取消暂不扣回。
       </small>
     </Card>
   );

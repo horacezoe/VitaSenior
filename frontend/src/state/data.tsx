@@ -26,6 +26,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const { api, role, elderId, session } = useSession(),
     [revision, setRevision] = useState(0);
   const scope = `${api.base}:${elderId || ""}`;
+  const [calendarSignals, setCalendarSignals] = useState<{
+    scope: string;
+    items: Schemas["HealthAnomaly"][];
+  }>({ scope: "", items: [] });
+  const observeCalendar = useCallback(
+    (elder: string, items: Schemas["HealthAnomaly"][]) => {
+      if (elder !== elderId || role !== "child") return;
+      const mark = (xs: Schemas["HealthAnomaly"][]) =>
+        xs
+          .map((a) => a.anomaly_id + ":" + a.revision + ":" + a.status)
+          .sort()
+          .join(",");
+      setCalendarSignals((old) =>
+        old.scope === scope && mark(old.items) === mark(items)
+          ? old
+          : { scope, items },
+      );
+    },
+    [scope, elderId, role],
+  );
   const [syncError, setSyncError] = useState<unknown>(null);
   const ledger = useMemo(
     () => (elderId ? new RewardLedger(scope, localStorage) : null),
@@ -42,6 +62,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     !!session &&
     !!elderId &&
     (role !== "elder" || profile.data?.onboarding_status === "confirmed");
+  const daily = useResource(
+    `background-daily:${api.base}:${role}:${elderId}:${ready}:${localDay(api.now())}`,
+    async () =>
+      ready && elderId
+        ? api.get<Schemas["DailyReport"]>(
+            elderPath(elderId, "reports/daily") +
+              query({ date: localDay(api.now()) }),
+          )
+        : null,
+    revision,
+  );
   const notifications = useResource(
     `notifications:${api.base}:${role}:${elderId}:${ready}`,
     async () => {
@@ -160,6 +191,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     <DataContext.Provider
       value={{
         revision,
+        dailyReport: daily.data || null,
+        calendarAnomalies:
+          calendarSignals.scope === scope ? calendarSignals.items : [],
+        observeCalendar,
         refresh,
         notifications: notifications.data?.items || [],
         notificationError: notifications.error || profile.error || syncError,

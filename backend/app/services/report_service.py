@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.contracts.context import Actor
@@ -11,6 +11,9 @@ from app.contracts.ports import AccessPort, MemoryPort
 from app.core.clock import Clock, local_date
 from app.core.errors import AppError
 from app.models.identity import ElderProfile, FamilyBinding
+from app.models.health import Checkin as CheckinRow
+from app.schemas.health import RewardSummary
+from app.contracts.safety import SafetyPort
 from app.schemas.health import AttentionItem, Calendar, CalendarDay, DailyReport, Progress, ProgressCount, Records
 from app.schemas.identity import Dashboard, ElderSummary, RiskAssessment
 from app.services.health_service import authorize, checkin_dto, live_records, materialize_tasks, task_dto, clock_now
@@ -18,11 +21,12 @@ from app.services.health_service import authorize, checkin_dto, live_records, ma
 
 class ReportService:
     def __init__(self, clock: Clock | None = None, *, access: AccessPort | None = None,
-                 memory: MemoryPort | None = None):
+                 memory: MemoryPort | None = None, safety: SafetyPort | None = None):
         self.clock, self.access, self.memory = clock, access, memory
+        self.safety = safety
         self.provider_mode = "mock"
 
-    def _compute(self, tx, elder_id, day):
+    def _compute(self, tx, elder_id, day, actor):
         now = clock_now(self.clock)
         tasks = materialize_tasks(tx, elder_id, day, now)
         rows = live_records(tx, elder_id, day)
@@ -40,7 +44,7 @@ class ReportService:
             state, color = "complete", "green"
         else:
             state, color = "partial", "yellow"
-        completion = CalendarDay(date=day, state=state, color=color,
+        completion = CalendarDay(anomalies=self.safety.read(tx,actor,elder_id,day) if self.safety else [],date=day, state=state, color=color,
             is_today=day == local_date(now), progress=Progress(**counts))
         records = Records(**{c: [checkin_dto(r) for r in rows if r.type == c] for c in counts})
         attention = []
@@ -57,10 +61,13 @@ class ReportService:
 
     def daily(self, tx: Session, actor: Actor, elder_id: str, day: date) -> DailyReport:
         authorize(tx, actor, elder_id, access=self.access)
-        completion, records, attention, _ = self._compute(tx, elder_id, day)
+        completion, records, attention, _ = self._compute(tx, elder_id, day, actor)
         p = completion.progress
         text = f"饮食记录 {p.diet.completed}/{p.diet.expected}，运动记录 {p.exercise.completed}/{p.exercise.expected}，明确确认服药 {p.medication.completed}/{p.medication.expected}。未记录不等于实际未完成。"
-        return DailyReport(elder_id=elder_id, date=day, completion=completion, records=records,
+        return DailyReport(anomalies=completion.anomalies,safety_review_status=self.safety.status(tx,actor,elder_id,day) if self.safety else "not_reviewed",reward_summary=RewardSummary(
+            cumulative=tx.scalar(select(func.count()).select_from(CheckinRow).where(CheckinRow.elder_id==elder_id,CheckinRow.source!="demo_seed")),
+            on_date=tx.scalar(select(func.count()).select_from(CheckinRow).where(CheckinRow.elder_id==elder_id,CheckinRow.local_date==day,CheckinRow.source!="demo_seed"))),
+            elder_id=elder_id, date=day, completion=completion, records=records,
             summary_text=text, attention_items=attention, updated_at=clock_now(self.clock))
 
     def calendar(self, tx, actor, elder_id, month):
@@ -68,14 +75,14 @@ class ReportService:
         year, number = map(int, month.split("-"))
         if year < 1:
             raise AppError(422, "VALIDATION_ERROR", "Calendar year must be at least 0001")
-        days = [self._compute(tx, elder_id, date(year, number, n))[0]
+        days = [self._compute(tx, elder_id, date(year, number, n), actor)[0]
             for n in range(1, calendar.monthrange(year, number)[1] + 1)]
         return Calendar(month=month, days=days)
 
     def dashboard(self, tx, actor, elder_id, day=None):
         authorize(tx, actor, elder_id, access=self.access)
         day = day or local_date(clock_now(self.clock))
-        completion, records, attention, tasks = self._compute(tx, elder_id, day)
+        completion, records, attention, tasks = self._compute(tx, elder_id, day, actor)
         profile = tx.get(ElderProfile, elder_id).profile_json
         birth = date.fromisoformat(profile["birth_date"]) if profile.get("birth_date") else None
         today = local_date(clock_now(self.clock))

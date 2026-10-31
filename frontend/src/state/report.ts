@@ -47,3 +47,17 @@ export function reportMetrics(report: Schemas["DailyReport"]) {
       : null,
   };
 }
+
+export function familyReportTip(report: Schemas["DailyReport"]) {
+  const missing = (Object.keys(dimensionNames) as Dimension[])
+    .filter(
+      (k) =>
+        report.completion.progress[k].expected > 0 &&
+        report.completion.progress[k].completed <
+          report.completion.progress[k].expected,
+    )
+    .map((k) => dimensionNames[k]);
+  return missing.length
+    ? `建议您与长辈核对${missing.join("、")}记录，了解是否需要协助。暂无记录不等于实际未完成，请以长辈本人确认和既定用药计划为准。`
+    : "长辈当日的适用打卡已记录齐全，您可以送上一句问候，了解今天的感受。";
+}

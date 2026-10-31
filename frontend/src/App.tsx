@@ -1,3 +1,4 @@
+import { ChildAnomalyNotice } from "./components/Anomalies";
 import DailyReport from "./pages/DailyReport";
 import Shop from "./pages/Shop";
 import { useEffect, useState } from "react";
@@ -267,6 +268,7 @@ function MobileApp() {
           }
         />
       </Routes>
+      <ChildAnomalyNotice />
     </div>
   );
 }

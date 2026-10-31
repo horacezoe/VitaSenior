@@ -1,3 +1,4 @@
+from app.contracts.safety import SafetyPort
 from dataclasses import dataclass
 from app.contracts.ports import (
     AccessPort, BindingPort, ProfilePort, ChangePort, MedicationPort, CheckinPort,
@@ -20,3 +21,5 @@ class ServiceBundle:
     # composition always supplies the real (stub) implementations.
     tasks: TaskPort
     history: HistoryPort
+
+    safety: SafetyPort | None = None

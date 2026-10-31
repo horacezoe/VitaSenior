@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Card,
@@ -22,7 +22,7 @@ import { useData } from "../state/data";
 
 export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const { api, elderId, role } = useSession(),
-    { revision } = useData();
+    { revision, observeCalendar } = useData();
   const navigate = useNavigate();
   const today = localDay(api.now()),
     [month, setMonth] = useState(today.slice(0, 7)),
@@ -35,6 +35,13 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
       ),
     revision,
   );
+  useEffect(() => {
+    if (calendar.data && elderId && role === "child")
+      observeCalendar?.(
+        elderId,
+        calendar.data.days.flatMap((d) => d.anomalies || []),
+      );
+  }, [calendar.data, elderId, role, observeCalendar]);
   const previous = (offset: number) => {
     const date = new Date(month + "-01T12:00:00+08:00");
     date.setUTCMonth(date.getUTCMonth() + offset);
@@ -78,9 +85,9 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
             <button
               type="button"
               key={item.date}
-              aria-label={`${item.date}${item.state === "complete" ? "，适用记录已完成" : item.state === "partial" ? "，部分记录" : item.state === "future" ? "，未来日期" : "，暂无记录"}`}
+              aria-label={`${item.date}${item.anomalies?.length ? `，有${item.anomalies.length}项异常核对记录` : ""}${item.state === "complete" ? "，适用记录已完成" : item.state === "partial" ? "，部分记录" : item.state === "future" ? "，未来日期" : "，暂无记录"}`}
               aria-pressed={day === item.date}
-              className={`state-${item.state} ${day === item.date ? "selected" : ""}`}
+              className={`state-${item.state} ${item.anomalies?.length ? "has-anomaly" : ""} ${day === item.date ? "selected" : ""}`}
               disabled={item.state === "future"}
               onClick={() => {
                 setDay(item.date);
@@ -88,6 +95,11 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
               }}
             >
               {Number(item.date.slice(-2))}
+              {!!item.anomalies?.length && (
+                <b className="anomaly-day-mark" aria-hidden>
+                  !
+                </b>
+              )}
               {["complete", "partial"].includes(item.state) && (
                 <i className="day-dot" />
               )}
@@ -98,6 +110,9 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
           <span>适用记录完成</span>
           <span>部分记录</span>
           <span>暂无记录</span>
+          {calendar.data?.days.some((d) => d.anomalies?.length) && (
+            <span className="anomaly-legend">! 异常核对记录</span>
+          )}
         </div>
       </Card>
       <ErrorNotice

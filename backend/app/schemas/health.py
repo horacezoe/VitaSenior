@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated, Literal
 from pydantic import Field, AwareDatetime, model_validator
-from app.schemas.common import DTO
+from app.schemas.common import DTO, SourceRef
 from app.schemas.enums import Category, MealSlot, DeliveryState, TaskState, PushState, NotificationKind, EventType
 
 LocalTime = Annotated[str, Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")]
@@ -169,7 +169,40 @@ class Progress(DTO):
     diet: ProgressCount
     exercise: ProgressCount
     medication: ProgressCount
+class SafetyEvidence(DTO):
+    type: Literal["checkin", "medication_plan"]
+    id: str
+    version: int = Field(ge=1)
+class SafetySource(DTO):
+    evidence: SafetyEvidence
+    category: Literal["diet", "medication"]
+    basis: Literal["recorded", "planned"]
+    medicine_id: str | None = None
+    label: str
+    facts: dict[str, object]
+class SafetyFinding(DTO):
+    kind: Literal["food_drug", "drug_drug"]
+    title: str = Field(min_length=1,max_length=100)
+    detail: str = Field(min_length=1,max_length=600)
+    basis: Literal["recorded", "planned"]
+    evidence: list[SafetyEvidence] = Field(min_length=2,max_length=16)
+class SafetyReview(DTO):
+    status: Literal["reviewed", "insufficient_data"]
+    findings: list[SafetyFinding] = Field(max_length=8)
+class HealthAnomaly(SafetyFinding):
+    anomaly_id: str
+    date: date
+    assessment_model: str
+    status: Literal["active", "resolved"]
+    revision: int = Field(ge=1)
+    detected_at: AwareDatetime
+
+class RewardSummary(DTO):
+    cumulative: int = Field(ge=0)
+    on_date: int = Field(ge=0)
+
 class CalendarDay(DTO):
+    anomalies: list[HealthAnomaly] = Field(default_factory=list)
     date: date
     state: Literal["complete", "partial", "unrecorded", "future"]
     color: Literal["green", "yellow", "gray"] | None
@@ -190,6 +223,7 @@ class AttentionItem(DTO):
     source_ids: list[str]
     can_remind: bool
 class DailyInsights(DTO):
+    safety_review: SafetyReview | None = None
     warm_message: str = Field(min_length=1, max_length=200)
     elder_praise: str = Field(min_length=1, max_length=120)
     reminder: str = Field(min_length=1, max_length=120)
@@ -203,6 +237,9 @@ class ReportPerson(DTO):
     allergies: list[str] = Field(default_factory=list)
 
 class DailyReport(DTO):
+    safety_review_status: Literal["not_reviewed","reviewed","insufficient_data","unavailable"] = "not_reviewed"
+    anomalies: list[HealthAnomaly] = Field(default_factory=list)
+    reward_summary: RewardSummary | None = None
     medication_plans: list[MedicationPlan] = Field(default_factory=list)
     person: ReportPerson | None = None
     insights: DailyInsights | None = None

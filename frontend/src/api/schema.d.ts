@@ -1,5 +1,5 @@
 // Generated from backend/contracts/openapi.json. Do not edit.
-// SHA-256 3241bf18af34f1930270489b24f9d5ec181635ad9f2ed89c7f3894d4554f3d1c
+// SHA-256 6f7e387356ef3c2f36b01ef4da67af1572bb0acfa07a59d180eafdfc1170b2d7
 export interface components {
   schemas: {
     "ASRResult": { "is_mock": boolean; "language": string; "provider": string; "transcript": string };
@@ -22,7 +22,7 @@ export interface components {
     "BindingWrite": { "code": string; "relationship": string };
     "Body_MEDIA01": { "elder_id"?: (string | null); "file": string; "purpose": "meal" | "ingredient" | "medicine" | "face" | "voice_message" | "agent_audio" | "document" };
     "Calendar": { "days": Array<components['schemas']["CalendarDay"]>; "month": string };
-    "CalendarDay": { "color": ("green" | "yellow" | "gray" | null); "date": string; "is_today": boolean; "progress": components['schemas']["Progress"]; "state": "complete" | "partial" | "unrecorded" | "future" };
+    "CalendarDay": { "anomalies"?: Array<components['schemas']["HealthAnomaly"]>; "color": ("green" | "yellow" | "gray" | null); "date": string; "is_today": boolean; "progress": components['schemas']["Progress"]; "state": "complete" | "partial" | "unrecorded" | "future" };
     "CancelledCheckin": { "cancelled": true; "checkin_id": string; "version": number };
     "Category": "diet" | "exercise" | "medication";
     "ChangeAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["ChangePreview"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "decide_change" };
@@ -36,8 +36,8 @@ export interface components {
     "ConfirmWrite": { "draft_id": string; "expected_version": number; "medication_plans": Array<components['schemas']["MedicationPlanWrite-Input"]>; "profile": components['schemas']["ProfileFields"] };
     "CreatePlanAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["MedicationPlanWrite-Output"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "create_medication_plan" };
     "CreatePlanProposal": { "base_version"?: null; "operation": "create"; "patch": components['schemas']["MedicationPlanWrite-Input"]; "reason"?: string; "target_id"?: null; "target_type": "medication_plan" };
-    "DailyInsights": { "diet_advice": string; "elder_praise": string; "exercise_advice": string; "medication_advice": string; "reminder": string; "warm_message": string };
-    "DailyReport": { "ai_status"?: "not_requested" | "not_configured" | "ready" | "unavailable"; "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder_id": string; "insights"?: (components['schemas']["DailyInsights"] | null); "medication_plans"?: Array<components['schemas']["MedicationPlan"]>; "person"?: (components['schemas']["ReportPerson"] | null); "records": components['schemas']["Records"]; "summary_text": string; "updated_at": string };
+    "DailyInsights": { "diet_advice": string; "elder_praise": string; "exercise_advice": string; "medication_advice": string; "reminder": string; "safety_review"?: (components['schemas']["SafetyReview"] | null); "warm_message": string };
+    "DailyReport": { "ai_status"?: "not_requested" | "not_configured" | "ready" | "unavailable"; "anomalies"?: Array<components['schemas']["HealthAnomaly"]>; "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder_id": string; "insights"?: (components['schemas']["DailyInsights"] | null); "medication_plans"?: Array<components['schemas']["MedicationPlan"]>; "person"?: (components['schemas']["ReportPerson"] | null); "records": components['schemas']["Records"]; "reward_summary"?: (components['schemas']["RewardSummary"] | null); "safety_review_status"?: "not_reviewed" | "reviewed" | "insufficient_data" | "unavailable"; "summary_text": string; "updated_at": string };
     "DailyTask": { "cancelled"?: boolean; "category": components['schemas']["Category"]; "checkin_ids": Array<string>; "completion": "pending" | "completed" | "not_taken"; "date": string; "dose_display": (string | null); "due_at": (string | null); "plan_id": (string | null); "plan_version": (number | null); "slot_key": string; "task_id": string; "title": string; "waiting_for_meal": boolean };
     "Dashboard": { "attention_items": Array<components['schemas']["AttentionItem"]>; "completion": components['schemas']["CalendarDay"]; "date": string; "elder": components['schemas']["ElderSummary"]; "memory_summary": string; "pending_tasks": Array<components['schemas']["DailyTask"]>; "provider_mode": "mock" | "real"; "recommendations": Array<string>; "risk_assessment": components['schemas']["RiskAssessment"]; "today_records": components['schemas']["Records"] };
     "DeactivatePlanProposal": { "base_version": number; "operation": "deactivate"; "patch": components['schemas']["EmptyPatch"]; "reason"?: string; "target_id": string; "target_type": "medication_plan" };
@@ -95,6 +95,7 @@ export interface components {
     "FixedSchedule": { "mode": "fixed"; "slots": Array<components['schemas']["FixedSlot"]> };
     "FixedSlot": { "local_time": string; "slot_id": string };
     "Health": { "database": "ok" | "unavailable"; "scheduler": "disabled" | "running" | "stopped" | "failed"; "status": "ok" | "degraded" };
+    "HealthAnomaly": { "anomaly_id": string; "assessment_model": string; "basis": "recorded" | "planned"; "date": string; "detail": string; "detected_at": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug"; "revision": number; "status": "active" | "resolved"; "title": string };
     "LoginRequest": { "challenge_id": string; "code": string; "phone": string; "role": components['schemas']["Role"] };
     "LoginResponse": { "access_token": string; "bound_elders": Array<components['schemas']["ElderSummary"]>; "elder_id": (string | null); "expires_at": string; "user": components['schemas']["User"] };
     "MatchResult": { "draft_id": string; "is_mock": true; "match_status": "matched" | "not_found"; "medication_plan_drafts": Array<components['schemas']["MedicationPlanWrite-Output"]>; "profile_draft": components['schemas']["ProfileFields"] };
@@ -151,9 +152,13 @@ export interface components {
     "ReportAction": { "action_id": string; "expires_at": string; "preview": components['schemas']["ReportPreview"]; "requires_confirmation": boolean; "status": components['schemas']["ActionStatus"]; "type": "query_report" };
     "ReportPerson": { "allergies"?: Array<string>; "birth_date"?: (string | null); "conditions"?: Array<string>; "display_name": string };
     "ReportPreview": { "date": string };
+    "RewardSummary": { "cumulative": number; "on_date": number };
     "RiskAssessment": { "level"?: null; "status"?: "not_configured" };
     "Role": "elder" | "child";
     "Runtime": { "capabilities": { [key: string]: boolean }; "mode": "demo"; "providers": { [key: string]: "mock" | "real" | "not_implemented" }; "server_time": string; "timezone": "Asia/Hong_Kong" };
+    "SafetyEvidence": { "id": string; "type": "checkin" | "medication_plan"; "version": number };
+    "SafetyFinding": { "basis": "recorded" | "planned"; "detail": string; "evidence": Array<components['schemas']["SafetyEvidence"]>; "kind": "food_drug" | "drug_drug"; "title": string };
+    "SafetyReview": { "findings": Array<components['schemas']["SafetyFinding"]>; "status": "reviewed" | "insufficient_data" };
     "SettingsPatch-Input": { "daily_summary"?: (components['schemas']["TimedReminder"] | null); "exercise"?: (components['schemas']["TimedReminder"] | null); "meals"?: (Array<components['schemas']["MealReminder"]> | null); "voice_enabled"?: (boolean | null) };
     "SettingsPatch-Output": { "daily_summary"?: (components['schemas']["TimedReminder"] | null); "exercise"?: (components['schemas']["TimedReminder"] | null); "meals"?: (Array<components['schemas']["MealReminder"]> | null); "voice_enabled"?: (boolean | null) };
     "SettingsProposal": { "base_version": number; "operation": "update"; "patch": components['schemas']["SettingsPatch-Input"]; "reason"?: string; "target_id": string; "target_type": "reminder_settings" };

@@ -756,6 +756,13 @@
       "CalendarDay": {
         "additionalProperties": false,
         "properties": {
+          "anomalies": {
+            "items": {
+              "$ref": "#/components/schemas/HealthAnomaly"
+            },
+            "title": "Anomalies",
+            "type": "array"
+          },
           "color": {
             "anyOf": [
               {
@@ -1440,6 +1447,16 @@
             "title": "Reminder",
             "type": "string"
           },
+          "safety_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "warm_message": {
             "maxLength": 200,
             "minLength": 1,
@@ -1471,6 +1488,13 @@
             ],
             "title": "Ai Status",
             "type": "string"
+          },
+          "anomalies": {
+            "items": {
+              "$ref": "#/components/schemas/HealthAnomaly"
+            },
+            "title": "Anomalies",
+            "type": "array"
           },
           "attention_items": {
             "items": {
@@ -1520,6 +1544,27 @@
           },
           "records": {
             "$ref": "#/components/schemas/Records"
+          },
+          "reward_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RewardSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "safety_review_status": {
+            "default": "not_reviewed",
+            "enum": [
+              "not_reviewed",
+              "reviewed",
+              "insufficient_data",
+              "unavailable"
+            ],
+            "title": "Safety Review Status",
+            "type": "string"
           },
           "summary_text": {
             "title": "Summary Text",
@@ -2975,6 +3020,94 @@
           "scheduler"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "HealthAnomaly": {
+        "additionalProperties": false,
+        "properties": {
+          "anomaly_id": {
+            "title": "Anomaly Id",
+            "type": "string"
+          },
+          "assessment_model": {
+            "title": "Assessment Model",
+            "type": "string"
+          },
+          "basis": {
+            "enum": [
+              "recorded",
+              "planned"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "detail": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/SafetyEvidence"
+            },
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "food_drug",
+              "drug_drug"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "resolved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "detail",
+          "basis",
+          "evidence",
+          "anomaly_id",
+          "date",
+          "assessment_model",
+          "status",
+          "revision",
+          "detected_at"
+        ],
+        "title": "HealthAnomaly",
         "type": "object"
       },
       "LoginRequest": {
@@ -5214,6 +5347,27 @@
         "title": "ReportPreview",
         "type": "object"
       },
+      "RewardSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "cumulative": {
+            "minimum": 0.0,
+            "title": "Cumulative",
+            "type": "integer"
+          },
+          "on_date": {
+            "minimum": 0.0,
+            "title": "On Date",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cumulative",
+          "on_date"
+        ],
+        "title": "RewardSummary",
+        "type": "object"
+      },
       "RiskAssessment": {
         "additionalProperties": false,
         "properties": {
@@ -5285,6 +5439,113 @@
           "server_time"
         ],
         "title": "Runtime",
+        "type": "object"
+      },
+      "SafetyEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "checkin",
+              "medication_plan"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "version"
+        ],
+        "title": "SafetyEvidence",
+        "type": "object"
+      },
+      "SafetyFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "enum": [
+              "recorded",
+              "planned"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "detail": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/SafetyEvidence"
+            },
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "food_drug",
+              "drug_drug"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "detail",
+          "basis",
+          "evidence"
+        ],
+        "title": "SafetyFinding",
+        "type": "object"
+      },
+      "SafetyReview": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SafetyFinding"
+            },
+            "maxItems": 8,
+            "title": "Findings",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "reviewed",
+              "insufficient_data"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "findings"
+        ],
+        "title": "SafetyReview",
         "type": "object"
       },
       "SettingsPatch-Input": {

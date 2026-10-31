@@ -81,8 +81,13 @@ def report01(ctx: Auth, elder_id: str, date: Annotated[Date, Query()], include_a
     if include_ai:
         from app.application.daily_report import enriched_report
         return enriched_report(ctx, elder_id, date)
-    return perform(ctx, service_name="reports", elder_id=elder_id, snapshot=True,
+    response = perform(ctx, service_name="reports", elder_id=elder_id, snapshot=True,
         operation=lambda s, tx, actor, elder: s.reports.daily(tx, actor, elder, date))
+    if ctx.request.app.state.settings.safety_review_enabled and ctx.request.app.state.report_writer is not None:
+        from starlette.background import BackgroundTask
+        from app.application.daily_report import automatic_review
+        response.background = BackgroundTask(automatic_review,ctx,elder_id,date)
+    return response
 
 @router.post("/elders/{elder_id}/presence", operation_id="NOTI01", response_model=Envelope[Presence], status_code=200)
 def noti01(ctx: Auth, elder_id: str, body: PresenceWrite):

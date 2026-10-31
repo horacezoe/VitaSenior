@@ -105,3 +105,29 @@ class Presence(Base):
     elder_id: Mapped[str] = mapped_column(ForeignKey("elder_profiles.id"), primary_key=True)
     client_id: Mapped[str] = mapped_column(String, primary_key=True)
     active_until: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class SafetySignal(Base):
+    __tablename__ = "safety_signals"
+    id: Mapped[str] = mapped_column(String,primary_key=True,default=lambda:new_id("safety"))
+    elder_id: Mapped[str] = mapped_column(ForeignKey("elder_profiles.id"))
+    local_date: Mapped[date] = mapped_column()
+    issue_key: Mapped[str] = mapped_column(String)
+    payload: Mapped[dict] = mapped_column(JSON)
+    fingerprint: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    revision: Mapped[int] = mapped_column(default=1)
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    history: Mapped[list] = mapped_column(JSON,default=list)
+    __table_args__=(UniqueConstraint("elder_id","local_date","issue_key"),CheckConstraint("status IN ('active','resolved')"),CheckConstraint("revision >= 1"))
+
+class SafetyAssessment(Base):
+    __tablename__="safety_assessments"
+    elder_id: Mapped[str] = mapped_column(ForeignKey("elder_profiles.id"),primary_key=True)
+    local_date: Mapped[date] = mapped_column(primary_key=True)
+    input_digest: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    reviewed_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    __table_args__=(CheckConstraint("status IN ('reviewed','insufficient_data','unavailable')"),)

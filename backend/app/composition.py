@@ -21,6 +21,7 @@ from app.services.medication_service import MedicationService
 from app.services.health_service import CheckinService
 from app.services.notification_service import NotificationService
 from app.services.report_service import ReportService
+from app.services.safety_review_service import SafetyReviewService
 from app.services.memory_service import MemoryService
 from app.services.media_service import MediaService
 from app.services import agent_capabilities, health_capabilities, identity_capabilities
@@ -40,7 +41,8 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
     memory = MemoryService(clock, access)
     medication = MedicationService(clock, access=access, media=media, memory=memory)
     checkins = CheckinService(clock, access=access, media=media, memory=memory)
-    reports = ReportService(clock, access=access, memory=memory)
+    safety = SafetyReviewService(clock, access)
+    reports = ReportService(clock, access=access, memory=memory, safety=safety)
     # Late-bound provider status so the dashboard can report the real mode without
     # the health domain reading Settings: B's one-line change is
     # `provider_mode=self.provider_mode` (default "mock" keeps old behaviour).
@@ -57,6 +59,7 @@ def compose(clock: Clock | None = None, settings: Settings | None = None, limite
         checkins=checkins,
         notifications=notifications,
         reports=reports,
+        safety=safety,
         memory=memory,
         media=media,
         # B implements today's goal generation and the 14-day import on the health

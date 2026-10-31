@@ -5,6 +5,7 @@ import os
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", "data")))
+    safety_review_enabled: bool = field(default_factory=lambda: os.getenv("SAFETY_REVIEW_ENABLED", "false").lower() == "true")
     scanner_enabled: bool = field(default_factory=lambda: os.getenv("SCANNER_ENABLED", "false").lower() == "true")
     cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(filter(None, os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","))))
     app_env: str = field(default_factory=lambda: os.getenv("APP_ENV", "demo"))

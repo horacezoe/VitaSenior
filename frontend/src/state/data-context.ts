@@ -1,8 +1,14 @@
 import { createContext, useContext } from "react";
-import type { Checkin, Notification } from "../api/client";
+import type { Checkin, Notification, Schemas } from "../api/client";
 import type { RewardLedger } from "./rewards";
 
 type DataState = {
+  calendarAnomalies?: Schemas["HealthAnomaly"][];
+  observeCalendar?: (
+    elder: string,
+    anomalies: Schemas["HealthAnomaly"][],
+  ) => void;
+  dailyReport?: Schemas["DailyReport"] | null;
   revision: number;
   refresh(): void;
   notifications: Notification[];
