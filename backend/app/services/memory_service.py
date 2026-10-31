@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
-from app.contracts.context import Actor
+from app.contracts.context import Actor, WriteScope, SYSTEM_USER_ID
 from app.contracts.ports import AccessPort
 from app.core.auth import require_elder_access
 from app.core.clock import Clock, SystemClock, local_date
@@ -21,17 +21,22 @@ from app.schemas.health import Checkin
 
 class MemoryService:
     def __init__(self, clock: Clock | None = None, access: AccessPort | None = None):
-        # F1 composition still calls MemoryService(). A0 should pass its Clock.
+        # Production composition passes its shared Clock and AccessPort.
         self.clock = clock or SystemClock()
         self.access = access
 
-    def _authorize(self, tx: Session, actor: Actor, elder_id: str, scope="read"):
+    def _authorize(self, tx: Session, actor: Actor, elder_id: str,
+                   scope: WriteScope = "read", *, system: bool = False):
+        # System settlement may invalidate sources and read the resulting context.
+        # It cannot invent user statements, corrections or deletions.
+        if actor.user_id == SYSTEM_USER_ID and not system:
+            raise AppError(403, "ELDER_ACCESS_DENIED", "System settlement cannot edit user memory")
         if self.access is not None:
             return self.access.require_elder_access(tx, actor, elder_id, scope)
         return require_elder_access(tx, actor, elder_id, scope)
 
     def context(self, tx: Session, actor: Actor, elder_id: str) -> MemoryDocument:
-        self._authorize(tx, actor, elder_id)
+        self._authorize(tx, actor, elder_id, system=True)
         row = tx.get(MemoryRow, elder_id)
         entries = [MemoryEntry.model_validate(e) for e in row.entries_json] if row else []
         return MemoryDocument(
@@ -156,7 +161,7 @@ class MemoryService:
         return row, entry
 
     def on_source_changed(self, tx: Session, actor: Actor, elder_id: str, source_ref: SourceRef) -> None:
-        self._authorize(tx, actor, elder_id)
+        self._authorize(tx, actor, elder_id, system=True)
         row = tx.get(MemoryRow, elder_id)
         if row is None:
             return
