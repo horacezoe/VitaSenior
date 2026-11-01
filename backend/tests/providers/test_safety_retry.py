@@ -38,7 +38,7 @@ def test_repair_shares_deadline_and_has_no_third_attempt(monkeypatch):
         raise AppError(502,'PROVIDER_ERROR','Unsupported model evidence')
     monkeypatch.setattr(writer,'_generate',invalid)
     with pytest.raises(AppError):writer.generate(None)
-    assert [v[0] for v in calls]==[20,7] and calls[1][1]=='Unsupported model evidence'
+    assert [v[0] for v in calls]==[45,32] and calls[1][1]=='Unsupported model evidence'
 
 
 def test_auth_failure_not_retried(monkeypatch):
@@ -48,3 +48,27 @@ def test_auth_failure_not_retried(monkeypatch):
     monkeypatch.setattr(writer,'_generate',failure)
     with pytest.raises(AppError):writer.generate(None)
     assert len(calls)==1
+
+
+@pytest.mark.parametrize('safety_only,expected_budget',[(False,45),(True,3)])
+def test_queued_daily_read_keeps_model_budget_while_plan_check_keeps_total_deadline(monkeypatch,safety_only,expected_budget):
+    import app.providers.report_writer as module
+    ticks=[0.0]
+    monkeypatch.setattr(module,'time',SimpleNamespace(monotonic=lambda:ticks[0]))
+    writer=MiMoReportWriter(Settings())
+    released=[]
+    class BusyLock:
+        def acquire(self,*,timeout):
+            assert timeout==20
+            ticks[0]+=17
+            return True
+        def release(self):released.append(True)
+    writer.generation_lock=BusyLock()
+    budgets=[]
+    def generate(snapshot,*,timeout,**options):
+        budgets.append(timeout)
+        return 'generated'
+    monkeypatch.setattr(writer,'_generate',generate)
+    assert writer._run(None,safety_only=safety_only)=='generated'
+    assert budgets==[expected_budget]
+    assert released==[True]

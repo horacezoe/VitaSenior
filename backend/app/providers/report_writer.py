@@ -49,8 +49,14 @@ class MiMoReportWriter:
         started=time.monotonic()
         if not self.generation_lock.acquire(timeout=20):
             raise AppError(504,'PROVIDER_TIMEOUT','Daily report busy',retryable=True)
+        # Background reviews and foreground reads share this lock. A daily read
+        # gets its model budget after bounded queueing, rather than timing out
+        # immediately after a preceding request releases the lock. Plan checks
+        # keep their original total deadline, including queueing.
+        if not safety_only:started=time.monotonic()
+        budget=20 if safety_only else 45
         try:
-            remaining=lambda: 20-(time.monotonic()-started)
+            remaining=lambda: budget-(time.monotonic()-started)
             if remaining()<=0:raise AppError(504,'PROVIDER_TIMEOUT','Daily report deadline exceeded',retryable=True)
             try:
                 return self._generate(snapshot,timeout=remaining(),**options)
@@ -60,7 +66,7 @@ class MiMoReportWriter:
                     'Invalid food-drug evidence','Invalid drug-drug evidence','Invalid drug-profile evidence','Daily report output schema invalid',
                     'Daily report response incomplete'}
                 if error.message not in repairable or remaining()<4:raise
-                # One corrective request, within the SAME total 20 second budget.
+                # One corrective request, within the SAME model time budget.
                 # Never retry business writes, auth failures or arbitrary network errors.
                 logging.getLogger('vitasenior.workflow').warning('Safety output rejected; one bounded correction reason=%s',error.message)
                 return self._generate(snapshot,timeout=remaining(),correction=error.message,**options)
@@ -90,7 +96,9 @@ class MiMoReportWriter:
                         headers={'Authorization':'Bearer '+s.chat_api_key},json={
                         'model':s.chat_model,'messages':[{'role':'system','content':(PLAN_RISK_PROMPT if safety_only else PROMPT) + (('\n上次输出未通过校验：'+correction+'。请重新核对 JSON 字段与证据引用，不能沿用错误。') if correction else '')},{'role':'user','content':content}],
                         'stream':False,'thinking':{'type':'disabled'},'response_format':{'type':'json_object'},'max_completion_tokens':1600 if safety_only else 4096})
-                    if response.status_code!=200:raise AppError(502,'PROVIDER_ERROR','Daily report provider unavailable',retryable=response.status_code in {429,502,503,504})
+                    if response.status_code!=200:
+                        logging.getLogger('vitasenior.workflow').warning('Daily report provider HTTP status=%s',response.status_code)
+                        raise AppError(502,'PROVIDER_ERROR','Daily report provider unavailable',retryable=response.status_code in {429,502,503,504})
                     if len(response.content)>65536:raise ValueError('response too large')
                     choice=response.json()['choices'][0]
                     if choice.get('finish_reason','stop')!='stop':
@@ -104,6 +112,7 @@ class MiMoReportWriter:
         except (TimeoutError,httpx.TimeoutException) as exc:
             raise AppError(504,'PROVIDER_TIMEOUT','Daily report timed out',retryable=True) from exc
         except (httpx.RequestError,ValueError,KeyError,IndexError,TypeError,ValidationError) as exc:
+            logging.getLogger('vitasenior.workflow').warning('Daily report provider failure type=%s',type(exc).__name__)
             raise AppError(502,'PROVIDER_ERROR','Daily report generation failed') from exc
 
     @staticmethod
