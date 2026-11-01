@@ -68,7 +68,7 @@ export default function Onboarding() {
 
   return (
     <Page title={active ? (active.draft.match_status === "not_found" ? "请填写您的档案" : "一起核对您的信息") : "正在查询社区档案"}
-      subtitle="确认后才会保存为正式档案" back="/settings">
+      subtitle="确认后才会保存为正式档案" backTo="/login" backLabel="返回登录">
       {!active ? (
         <Card>
           {initial.loading && <Loading />}

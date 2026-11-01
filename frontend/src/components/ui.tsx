@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { friendlyError, WriteKey } from "../api/client";
 import { useSession } from "../state/session";
-import { avatarImages } from "../assets";
+import { appIcon, avatarImages, welcomeImage } from "../assets";
 
 export function Button({
   children,
@@ -53,8 +53,8 @@ export function Button({
 export function Brand({ small = false }: { small?: boolean }) {
   return (
     <div className={`brand ${small ? "brand-small" : ""}`}>
-      <span className="brand-mark">
-        <Leaf size={20} strokeWidth={1.7} />
+      <span className="brand-mark" aria-hidden="true">
+        <img src={appIcon} alt="" />
       </span>
       <span>
         银龄<small>YinLink</small>
@@ -66,6 +66,8 @@ export function Page({
   title,
   subtitle,
   back,
+  backTo,
+  backLabel = "返回上一页",
   children,
   action,
   className = "",
@@ -73,6 +75,8 @@ export function Page({
   title: string;
   subtitle?: string;
   back?: string | false;
+  backTo?: string;
+  backLabel?: string;
   children: ReactNode;
   action?: ReactNode;
   className?: string;
@@ -81,17 +85,21 @@ export function Page({
   return (
     <main className={`page ${className}`}>
       <header className="page-heading">
-        {back !== false && (
+        {back !== false && (backTo ? (
+          <Link to={backTo} replace className="icon-button back" aria-label={backLabel}>
+            <ArrowLeft size={23} />
+          </Link>
+        ) : (
           <button
             type="button"
             className="icon-button back"
             onClick={() => navigate(-1)}
             disabled={window.history.length <= 1}
-            aria-label="返回上一页"
+            aria-label={backLabel}
           >
             <ArrowLeft size={23} />
           </button>
-        )}
+        ))}
         <div>
           <h1>{title}</h1>
           {subtitle && <p>{subtitle}</p>}
@@ -219,6 +227,17 @@ export function MenuLink({
       {children}
       <ArrowRight size={19} className="muted" />
     </Link>
+  );
+}
+export function WelcomeCompanion() {
+  return (
+    <img
+      className="welcome-companion"
+      src={welcomeImage}
+      alt="小银龄竖起拇指，为你加油"
+      width={1024}
+      height={1536}
+    />
   );
 }
 export function Avatar({

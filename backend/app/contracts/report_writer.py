@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
-from app.schemas.health import DailyReport, DailyInsights, SafetySource, SafetyReview
+from app.schemas.health import DailyReport, DailyInsights, SafetySource, SafetyReview, Checkin
 from app.schemas.identity import Profile
 from app.schemas.agent import MemoryDocument
 
@@ -10,6 +10,7 @@ class ReportInput:
     memory: MemoryDocument
     report: DailyReport
     safety_sources: tuple[SafetySource,...] = ()
+    history: tuple[Checkin,...] = ()
     def __post_init__(self):
         # Versioned, server-read profile evidence. No inferred medical facts.
         profile=self.profile
@@ -33,7 +34,9 @@ def report_payload(snapshot):
     if 'completion' in report:report['completion'].pop('anomalies',None)
     return dict(profile=snapshot.profile.model_dump(mode='json',exclude={'updated_at'}),
         memory=snapshot.memory.model_dump(mode='json',exclude={'updated_at'}),report=report,
-        safety_sources=[s.model_dump(mode='json') for s in getattr(snapshot,'safety_sources',())])
+        safety_sources=[s.model_dump(mode='json') for s in getattr(snapshot,'safety_sources',())],
+        history=[r.model_dump(mode='json',include={'checkin_id','type','local_date','payload','version','source'})
+                 for r in getattr(snapshot,'history',())])
 
 def report_digest(snapshot):
     import hashlib,json

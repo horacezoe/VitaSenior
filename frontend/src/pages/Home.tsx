@@ -14,7 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import {
-  Avatar,
+  WelcomeCompanion,
   Brand,
   Button,
   Card,
@@ -98,7 +98,7 @@ export function ElderHome() {
             ? "小银龄陪伴中"
             : "今天，也有小银龄陪着你"}
         </div>
-        <Avatar />
+        <WelcomeCompanion />
         <div className="companion-copy">
           <h2>聊聊今天的生活</h2>
           <p>

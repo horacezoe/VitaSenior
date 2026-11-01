@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   cameraFrame,
   encodeWav,
@@ -37,6 +37,19 @@ describe("actual PCM WAV encoding", () => {
   it("rejects invalid sampling metadata and does not invent a missing camera frame", async () => {
     expect(() => encodeWav(new Float32Array(), 1)).toThrow();
     expect(await cameraFrame(null)).toBeNull();
+  });
+  it("uploads the complete camera frame with the original aspect ratio", async () => {
+    const drawImage = vi.fn();
+    const canvas = { width: 0, height: 0, getContext: () => ({ drawImage }),
+      toBlob: (resolve: (value: Blob) => void) => resolve(new Blob(["frame"])) };
+    vi.stubGlobal("document", { createElement: () => canvas });
+    try {
+      const camera = { videoWidth: 1920, videoHeight: 1080, readyState: 2 } as HTMLVideoElement;
+      expect(await cameraFrame(camera)).toBeInstanceOf(Blob);
+      expect(canvas.width).toBe(800);
+      expect(canvas.height).toBe(450);
+      expect(drawImage).toHaveBeenCalledWith(camera, 0, 0, 800, 450);
+    } finally { vi.unstubAllGlobals(); }
   });
 });
 

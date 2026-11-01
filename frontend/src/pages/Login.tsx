@@ -4,7 +4,7 @@ import { ArrowRight, Phone, HeartHandshake } from "lucide-react";
 import { type Schemas } from "../api/client";
 import { useSession } from "../state/session";
 import {
-  Avatar,
+  WelcomeCompanion,
   Brand,
   Button,
   ErrorNotice,
@@ -57,7 +57,7 @@ export default function Login() {
         <span className="small-label">你自在，我安心</span>
       </div>
       <section className="login-intro">
-        <Avatar />
+        <WelcomeCompanion />
         <span className="eyebrow">你自在，我安心</span>
         <h1>
           你好，

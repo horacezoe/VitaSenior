@@ -1,7 +1,7 @@
 import { retryNode, logNode } from "../media/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { PhoneOff, RotateCcw, Volume2, Mic } from "lucide-react";
+import { PhoneOff, RotateCcw, Volume2, Mic, X } from "lucide-react";
 import { Avatar, Button } from "../components/ui";
 import {
   ApiError,
@@ -53,6 +53,12 @@ export default function Call() {
     [level, setLevel] = useState(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [restart, setRestart] = useState(0);
+  const [avatarExpanded, setAvatarExpanded] = useState(false);
+  const companionDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (avatarExpanded) companionDialog.current?.showModal();
+    else companionDialog.current?.close();
+  }, [avatarExpanded]);
   const setMode = (value: Mode) => {
     modeRef.current = value;
     if (alive.current) setModeState(value);
@@ -377,6 +383,22 @@ export default function Call() {
             : "idle";
   return (
     <main className="call-page" aria-label="与小银龄通话">
+      <header className="call-companion">
+        <button type="button" className="call-avatar-toggle" aria-label="放大小银龄头像"
+          aria-expanded={avatarExpanded} onClick={() => setAvatarExpanded(true)}>
+          <Avatar state={avatarState} className="call-avatar" />
+        </button>
+        <div className="call-companion-copy">
+          <h1>小银龄 <span>{cameraMissing ? "语音通话" : "视频陪伴"}</span></h1>
+          <p role="status" aria-live="polite">{statusText[mode]}</p>
+          <div className="voice-wave" aria-hidden>
+            {[0.4, 0.7, 1, 0.6, 0.85, 0.45, 0.7].map((value, i) => (
+              <i key={i} style={{ height: `${mode === "listening" ? 4 + level * value * 12 : 4}px` }} />
+            ))}
+          </div>
+        </div>
+      </header>
+      <section className="call-viewfinder" aria-label="完整摄像头取景区">
       <video
         ref={video}
         className="camera-preview"
@@ -385,28 +407,12 @@ export default function Call() {
         playsInline
         aria-label="摄像头实时预览"
       />
-      <div className="call-shade" />
-      <div className="call-top">
-        <span className="call-private">
-          <span className="status-dot" />
-          {cameraMissing ? "语音通话" : "小银龄通话"}
-        </span>
-        <Avatar state={avatarState} className="call-avatar" />
-        <h1>小银龄</h1>
-        <p role="status" aria-live="polite">
-          {statusText[mode]}
-        </p>
-        {mode === "listening" && (
-          <div className="voice-wave" aria-hidden>
-            {[0.4, 0.7, 1, 0.6, 0.85, 0.45, 0.7].map((value, i) => (
-              <i key={i} style={{ height: `${8 + level * value * 28}px` }} />
-            ))}
-          </div>
-        )}
-      </div>
+        {cameraMissing && <p className="camera-unavailable">摄像头暂不可用，可继续语音交流</p>}
+      </section>
+      <footer className="call-controls">
       <div className="call-caption" aria-live="polite">
         {transcript && <small>您说：{transcript}</small>}
-        {caption && <p>{caption}</p>}
+        {caption && <p className="call-caption-text" tabIndex={0}>{caption}</p>}
         {actions.some((action) => action.status === "pending") && (
           <span className="confirm-hint">
             请核对后说“确认”，也可以说“取消”或说明更正。
@@ -453,8 +459,16 @@ export default function Call() {
         aria-label="挂断电话"
       >
         <PhoneOff size={31} fill="currentColor" strokeWidth={1.4} />
+        <span>挂断</span>
       </button>
-      <span className="hangup-label">挂断</span>
+      </footer>
+      <dialog ref={companionDialog} className="call-companion-dialog" aria-label="小银龄陪伴"
+        onCancel={() => setAvatarExpanded(false)}
+        onClick={(event) => { if (event.target === event.currentTarget) setAvatarExpanded(false); }}>
+        <button className="icon-button" type="button" aria-label="收起小银龄头像" onClick={() => setAvatarExpanded(false)}><X size={22} /></button>
+        <Avatar state={avatarState} />
+        <h2>小银龄</h2><p>{statusText[mode]}</p>
+      </dialog>
     </main>
   );
 }

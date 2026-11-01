@@ -11,7 +11,8 @@ import {
 } from "react-router-dom";
 import { SessionProvider, useSession } from "./state/session";
 import { DataProvider } from "./state/data";
-import { Empty, Page } from "./components/ui";
+import { Empty, ErrorNotice, Loading, Page, useResource } from "./components/ui";
+import { elderPath, type Schemas } from "./api/client";
 import Login from "./pages/Login";
 import { ChildHome, ElderHome, HealthPanel } from "./pages/Home";
 import Call from "./pages/Call";
@@ -45,6 +46,22 @@ function Guard({
     );
   return children;
 }
+
+export function CallEntry({ children }: { children: React.ReactNode }) {
+  const { api, elderId } = useSession();
+  const profile = useResource(`call-profile:${api.base}:${api.token}:${elderId}`, () =>
+    api.get<Schemas["Profile"]>(elderPath(elderId!, "profile")),
+  );
+  if (profile.loading || profile.error || !profile.data) {
+    return <Page title="正在准备通话" backTo="/login" backLabel="返回登录">
+      {profile.loading && <Loading />}
+      <ErrorNotice error={profile.error} retry={() => void profile.refresh()} />
+    </Page>;
+  }
+  if (profile.data.onboarding_status !== "confirmed") return <Navigate to="/onboarding" replace />;
+  return children;
+}
+
 function MobileApp() {
   const { role, session } = useSession(),
     location = useLocation();
@@ -131,7 +148,7 @@ function MobileApp() {
           path="/call"
           element={
             <Guard role="elder">
-              <Call />
+              <CallEntry><Call /></CallEntry>
             </Guard>
           }
         />

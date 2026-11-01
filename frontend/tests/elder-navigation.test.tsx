@@ -103,20 +103,23 @@ it("health overview has broadcast, cumulative eggs with today note, then check-i
   expect(page).toContain("温情内容");
   expect(page).not.toContain("当日总结");
 });
-it("elder dated report contains only greeting/summary and check-ins, without overview blocks", () => {
+it("elder dated report shows the AI summary even without check-ins", () => {
   const page = html(<DailyReport embedded />);
   expect(page).toContain("小银龄陪您看今天");
   expect(page).toContain("当日总结");
   expect(page).toContain("三大打卡记录");
-  expect(page).not.toContain("温情内容");
+  expect(page).toContain("AI健康日报");
+  expect(page).toContain("温情内容");
   expect(page).not.toContain("鸡蛋积分");
   expect(page).not.toContain("一句提醒");
 });
-it("child report no longer exposes the warm broadcast block", () => {
+it("child report displays the AI summary without an elder playback control", () => {
   const page = html(<DailyReport embedded />, "child");
   expect(page).toContain("长辈基础信息");
   expect(page).not.toContain("AI管家温情播报");
-  expect(page).not.toContain("温情内容");
+  expect(page).toContain("AI健康日报");
+  expect(page).toContain("温情内容");
+  expect(page).not.toContain("听播报");
 });
 
 it("both roles show the same server cumulative and dated earnings; child footer addresses family", () => {

@@ -239,6 +239,15 @@ export default function DailyReport({
                   </h2>
                 </section>
               )}
+              {view !== "health" && (
+                <Card className="section ai-daily-summary">
+                  <h2>AI健康日报</h2>
+                  <p>{r.insights?.warm_message || (report.loading
+                    ? "正在结合档案与近期记录整理日报…"
+                    : "日报暂未生成，请稍后重试。")}</p>
+                  {role === "elder" && r.insights && <ReportSpeech text={r.insights.warm_message} />}
+                </Card>
+              )}
               {(view === "health" || role === "child") && (
                 <CumulativeEggs
                   today={m.eggs}

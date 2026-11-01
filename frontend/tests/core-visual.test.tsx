@@ -22,9 +22,13 @@ it("no medication plan stays neutral rather than zero adherence",()=>{
  expect(coreVisual("medication",p(2,3)).percent).toBe(100);
  expect(percentageHue(0)).toBeLessThan(percentageHue(50));expect(percentageHue(50)).toBeLessThan(percentageHue(100));
 });
-it("shared cards use status colors and accessible meter for both report roles",()=>{
- const report={records:{diet:[{payload:{food_groups:[]}}],exercise:[],medication:[]},completion:{progress:{diet:p(3,1),exercise:p(1,0),medication:p(2,1)}}} as unknown as Schemas["DailyReport"];
+it("shared cards show only active record counts and clear detail links",()=>{
+ const report={records:{diet:[{payload:{food_groups:[]}},{cancelled:true}],exercise:[],medication:[]},completion:{progress:{diet:p(3,1),exercise:p(1,0),medication:p(2,1)}}} as unknown as Schemas["DailyReport"];
  const html=renderToStaticMarkup(<MemoryRouter><CoreDataCards report={report} day="2026-11-01" /></MemoryRouter>);
- expect(html).toContain("core-caution");expect(html).toContain('aria-valuenow="50"');expect(html).toContain('role="progressbar"');
- expect(html).toContain("待完善");expect(html).toContain('/daily/2026-11-01/medication');expect(html).not.toMatch(/黄灯|绿灯|红灯/);
+ expect(html).toContain('aria-label="膳食：1条记录，查看详情"');
+ expect(html).toContain('aria-label="运动：0条记录，查看详情"');
+ expect(html).toContain('aria-label="用药：0条记录，查看详情"');
+ expect(html.match(/record-detail-arrow/g)).toHaveLength(3);
+ for(const kind of ["diet","exercise","medication"]) expect(html).toContain(`/daily/2026-11-01/${kind}`);
+ expect(html).not.toMatch(/暂无记录|尚无膳食记录|待完善|progressbar|已记录/);
 });

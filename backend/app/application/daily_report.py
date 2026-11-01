@@ -6,7 +6,19 @@ from app.routers.dependencies import check_access
 from app.contracts.report_writer import ReportInput, ReportWriter, report_digest
 from app.schemas.health import ReportPerson
 import hashlib, logging
+from datetime import timedelta
 log=logging.getLogger("vitasenior.workflow")
+
+def _recent_checkins(services, tx, actor, elder_id, day):
+    # Bounded factual context through the existing read port. Historical records
+    # never become today's completion or today's safety evidence.
+    history=[]
+    for offset in range(1, 8):
+        if day.toordinal() <= offset or len(history) >= 60:
+            break
+        history.extend(services.checkins.list(tx, actor, elder_id, day - timedelta(days=offset),
+                                             limit=min(20, 60-len(history))).items)
+    return tuple(history)
 
 def _snapshot(auth, elder_id, day):
     state=auth.request.app.state
@@ -18,9 +30,10 @@ def _snapshot(auth, elder_id, day):
         profile=s.profile.read(unit.session,auth.actor,elder_id)
         memory=s.memory.context(unit.session,auth.actor,elder_id)
         sources=s.safety.sources(unit.session,auth.actor,elder_id,day,report) if s.safety else ()
+        history=_recent_checkins(s,unit.session,auth.actor,elder_id,day)
         unit.commit()
     report.person=ReportPerson(**profile.model_dump(include={'display_name','birth_date','conditions','allergies'}))
-    return ReportInput(profile,memory,report,sources)
+    return ReportInput(profile,memory,report,sources,history)
 
 def _digest(state,snapshot):
     return hashlib.sha256(('safety-llm-v4|'+state.settings.chat_model+'|'+report_digest(snapshot)).encode()).hexdigest()
@@ -55,7 +68,7 @@ def enriched_report(auth, elder_id, day, *, review_only=False):
                     check_access(auth.request,unit.session,auth.actor,elder_id,'read')
                     current=state.services.reports.daily(unit.session,auth.actor,elder_id,day)
                     current.medication_plans=state.services.medication.list(unit.session,auth.actor,elder_id).items
-                    current_input=ReportInput(state.services.profile.read(unit.session,auth.actor,elder_id),state.services.memory.context(unit.session,auth.actor,elder_id),current,safety.sources(unit.session,auth.actor,elder_id,day,current))
+                    current_input=ReportInput(state.services.profile.read(unit.session,auth.actor,elder_id),state.services.memory.context(unit.session,auth.actor,elder_id),current,safety.sources(unit.session,auth.actor,elder_id,day,current),_recent_checkins(state.services,unit.session,auth.actor,elder_id,day))
                     if _digest(state,current_input)==digest:
                         safety.save(unit.session,auth.actor,elder_id,day,digest,state.settings.chat_model,review)
                     report.anomalies=safety.read(unit.session,auth.actor,elder_id,day)
